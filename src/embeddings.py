@@ -99,19 +99,27 @@ def build_embedding_matrix(
 def run(
     processed_dir: Optional[Path] = None,
     input_name: str = "movies_cleaned",
-    output_name: str = "movie_embeddings",
+    output_name: Optional[str] = None,
     force: bool = False,
     model_id: str = DEFAULT_MODEL_ID,
 ) -> tuple[np.ndarray, list[str]]:
     """
     Lee el DataFrame limpio (parquet o csv), calcula la matriz de embeddings
     y guarda matrix.npy + titles en .txt. Si los archivos ya existen y force=False, los carga.
-    model_id: "mpnet" (por defecto, 768 dims, chunks 300 palabras) o "minilm" (384 dims, 200 palabras).
+
+    - model_id: "mpnet" (por defecto, 768 dims, chunks 300 palabras) o "minilm" (384 dims, 200 palabras).
+    - output_name:
+        - Si es None (por defecto), se usa "movie_embeddings_{model_id}".
+        - Si se pasa un nombre explícito, se usa ese prefijo.
+
     Devuelve (matrix, titles).
     """
     repo_root = Path(__file__).resolve().parent.parent
     processed_dir = processed_dir or repo_root / "data" / "processed"
     base_in = processed_dir / input_name
+
+    # Nombre de salida dependiente del modelo si no se especifica
+    output_name = output_name or f"movie_embeddings_{model_id}"
     base_out = processed_dir / output_name
     path_npy = base_out.with_suffix(".npy")
     path_titles = base_out.with_suffix(".txt")
@@ -140,17 +148,41 @@ def run(
     return matrix, titles
 
 
-def load_embeddings(processed_dir: Optional[Path] = None, output_name: str = "movie_embeddings") -> tuple[np.ndarray, list[str]]:
+def load_embeddings(
+    processed_dir: Optional[Path] = None,
+    model_id: str = DEFAULT_MODEL_ID,
+    output_name: Optional[str] = None,
+) -> tuple[np.ndarray, list[str]]:
     """
-    Carga la matriz y los títulos guardados (para uso en Quarto o Streamlit).
+    Carga la matriz y los títulos guardados (para uso en Quarto o en la API/web).
+
+    - model_id: "mpnet" o "minilm". Por defecto, el mismo que se usa al generar embeddings.
+    - output_name:
+        - Si es None (por defecto), se busca "movie_embeddings_{model_id}".
+        - Para compatibilidad hacia atrás, si no existe se intenta "movie_embeddings".
     """
     repo_root = Path(__file__).resolve().parent.parent
     processed_dir = processed_dir or repo_root / "data" / "processed"
-    base = processed_dir / output_name
+
+    # Nombre base preferido
+    base_name = output_name or f"movie_embeddings_{model_id}"
+    base = processed_dir / base_name
     path_npy = base.with_suffix(".npy")
     path_titles = base.with_suffix(".txt")
+
+    # Compatibilidad con nombres antiguos sin sufijo de modelo
     if not path_npy.exists() or not path_titles.exists():
-        raise FileNotFoundError(f"Ejecuta antes: python -m src.embeddings (no se encontró {base}.*)")
+        legacy_base = processed_dir / "movie_embeddings"
+        legacy_npy = legacy_base.with_suffix(".npy")
+        legacy_txt = legacy_base.with_suffix(".txt")
+        if legacy_npy.exists() and legacy_txt.exists():
+            path_npy = legacy_npy
+            path_titles = legacy_txt
+        else:
+            raise FileNotFoundError(
+                f"Ejecuta antes: python -m src.embeddings "
+                f"(no se encontró {base}.* ni movie_embeddings.*)"
+            )
     matrix = np.load(path_npy, allow_pickle=False)
     titles = path_titles.read_text(encoding="utf-8").strip().split("\n")
     return matrix, titles
@@ -163,4 +195,7 @@ if __name__ == "__main__":
         print(f"Uso: python -m src.embeddings [mpnet|minilm]  (por defecto: mpnet)")
         sys.exit(1)
     matrix, titles = run(model_id=model_id)
-    print(f"Listo: matriz {matrix.shape} ({model_id}) y {len(titles)} títulos → data/processed/movie_embeddings.npy y .txt")
+    print(
+        f"Listo: matriz {matrix.shape} ({model_id}) y {len(titles)} títulos → "
+        f"data/processed/movie_embeddings_{model_id}.npy/.txt"
+    )

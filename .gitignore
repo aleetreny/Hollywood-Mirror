@@ -52,14 +52,10 @@ _site/
 data/raw/
 data/raw/**/*
 
-# Ignore processed outputs (keep placeholder)
-data/processed/*
-!data/processed/.gitkeep
 
 # Ignore common large artifacts anywhere
 *.parquet
 *.csv
-*.npy
 *.npz
 *.pkl
 *.joblib
