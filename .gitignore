@@ -1,0 +1,71 @@
+# ------------------------------
+# OS / editor
+# ------------------------------
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# ------------------------------
+# Python
+# ------------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Virtual envs
+.venv/
+venv/
+env/
+my_env/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# ------------------------------
+# Quarto (render artifacts)
+# ------------------------------
+.quarto/
+**/.quarto/
+**/*.quarto_ipynb
+_site/
+**/_site/
+**/*_files/
+**/*_cache/
+
+# ------------------------------
+# Streamlit secrets (never commit)
+# ------------------------------
+.streamlit/secrets.toml
+
+# ------------------------------
+# Data (keep repo public/lightweight)
+# ------------------------------
+data/raw/
+data/raw/**/*
+
+# Ignore processed outputs (keep placeholder)
+data/processed/*
+!data/processed/.gitkeep
+
+# Ignore common large artifacts anywhere
+*.parquet
+*.csv
+*.npy
+*.npz
+*.pkl
+*.joblib
+
+# ------------------------------
+# Project artifacts
+# ------------------------------
+artifacts/
+artifacts/**/*

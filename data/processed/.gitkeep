@@ -1,0 +1,1 @@
+# Aquí se guardan: DataFrame [movie_title, cleaned_text], matriz de embeddings .npy/.parquet
