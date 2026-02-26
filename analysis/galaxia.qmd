@@ -47,8 +47,8 @@ if not (REPO / "data").exists():
     REPO = REPO.parent
 processed = REPO / "data" / "processed"
 
-embeddings_npy = processed / "movie_embeddings_minilm.npy"
-embeddings_txt = processed / "movie_embeddings_minilm.txt"
+embeddings_npy = processed / "movie_embeddings_mpnet.npy"
+embeddings_txt = processed / "movie_embeddings_mpnet.txt"
 metrics_csv = processed / "movie_metrics.csv"
 
 # Cargar embeddings

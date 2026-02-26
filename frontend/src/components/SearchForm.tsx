@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { Search } from 'lucide-react';
-import { SimilarMoviesRequest } from '../types';
+import React, { useState } from "react";
+import { Search } from "lucide-react";
+import { SimilarMoviesRequest } from "../types";
 
 interface SearchFormProps {
   onSearch: (request: SimilarMoviesRequest) => void;
@@ -8,8 +8,8 @@ interface SearchFormProps {
 }
 
 export function SearchForm({ onSearch, isLoading }: SearchFormProps) {
-  const [text, setText] = useState('');
-  const [model, setModel] = useState<'mpnet' | 'minilm'>('mpnet');
+  const [text, setText] = useState("");
+  const [model, setModel] = useState<"mpnet" | "minilm">("mpnet");
   const [k, setK] = useState<number>(5);
   const [error, setError] = useState<string | null>(null);
 
@@ -18,7 +18,7 @@ export function SearchForm({ onSearch, isLoading }: SearchFormProps) {
     setError(null);
 
     if (!text.trim()) {
-      setError('Please enter a movie idea or script fragment.');
+      setError("Please enter a movie idea or script fragment.");
       return;
     }
 
@@ -29,8 +29,11 @@ export function SearchForm({ onSearch, isLoading }: SearchFormProps) {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="bg-zinc-900/80 border border-white/10 rounded-2xl p-6 shadow-xl flex flex-col gap-6">
-      <div className="flex flex-col gap-2">
+    <form
+      onSubmit={handleSubmit}
+      className="bg-zinc-900/80 border border-white/10 rounded-2xl p-6 shadow-xl flex flex-col gap-6 h-[calc(100vh-8rem)]"
+    >
+      <div className="flex flex-col gap-2 flex-1">
         <label htmlFor="text" className="text-sm font-medium text-zinc-300">
           Your Idea or Script Fragment
         </label>
@@ -39,7 +42,7 @@ export function SearchForm({ onSearch, isLoading }: SearchFormProps) {
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="A detective with insomnia tries to solve a murder in a city where the sun never sets..."
-          className="w-full h-40 bg-zinc-950 border border-white/10 rounded-xl p-4 text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 resize-none transition-all"
+          className="w-full flex-1 bg-zinc-950 border border-white/10 rounded-xl p-4 text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 resize-none transition-all"
           disabled={isLoading}
         />
         {error && <p className="text-sm text-red-400 mt-1">{error}</p>}
@@ -53,7 +56,7 @@ export function SearchForm({ onSearch, isLoading }: SearchFormProps) {
           <select
             id="model"
             value={model}
-            onChange={(e) => setModel(e.target.value as 'mpnet' | 'minilm')}
+            onChange={(e) => setModel(e.target.value as "mpnet" | "minilm")}
             className="w-full bg-zinc-950 border border-white/10 rounded-xl p-3 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all appearance-none"
             disabled={isLoading}
           >
@@ -101,7 +104,7 @@ export function SearchForm({ onSearch, isLoading }: SearchFormProps) {
         ) : (
           <Search className="w-5 h-5" />
         )}
-        {isLoading ? 'Searching...' : 'Find similar movies'}
+        {isLoading ? "Searching..." : "Find similar movies"}
       </button>
     </form>
   );
