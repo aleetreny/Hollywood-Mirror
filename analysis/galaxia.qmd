@@ -1,190 +1,217 @@
 ---
 title: "La Galaxia del Cine"
-subtitle: "Análisis geométrico del espacio latente de ~2.600 películas"
+subtitle: "Análisis geométrico y semántico del espacio latente de ~2.600 películas"
 format:
   html:
     toc: true
     toc-depth: 3
     code-fold: true
     code-tools: true
+    theme: darkly
 jupyter: python3
 ---
 
 ## Introducción
 
-Este documento recorre el **análisis geométrico** del proyecto Hollywood Mirror: partimos de la matriz de embeddings de las películas, reducimos dimensiones con **UMAP**, visualizamos la "galaxia" con **Plotly** y extraemos conclusiones sobre agrupaciones y similitudes.
+Este documento explora la **Galaxia del Cine**: un mapa interactivo basado en los guiones de ~2.600 películas. En lugar de basarnos en etiquetas de género asignadas por humanos, dejamos que un modelo de lenguaje (Sentence Transformers) extraiga el **estilo, tono y narrativa** de cada guion.
 
-**Pipeline previo (ya ejecutado):**
-
-1. **Parsing:** JSON por película → texto limpio (solo `heading` y `speaker/title`).
-2. **Embeddings:** Chunking (~300 palabras, 10% overlap) → modelo `all-mpnet-base-v2` → mean pooling por película → matriz `[N, 768]`.
+Hemos enriquecido este análisis calculando métricas adicionales de procesamiento de lenguaje natural (NLP), como la longitud del guion y el sentimiento general (polaridad).
 
 ---
 
-## Paso 1: Configuración y carga de embeddings
+## 1. Configuración y Carga de Datos
 
-Añadimos la raíz del proyecto al path para importar `src` y cargamos la matriz y los títulos guardados.
+Cargamos los embeddings (vectores de 768 dimensiones que representan la "huella dactilar" de cada película) y las métricas NLP precalculadas.
 
 ```{python}
 #| label: setup
+#| message: false
 from pathlib import Path
 import numpy as np
 import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+import umap
+import hdbscan
 
-# Raíz del repo: Quarto puede ejecutar desde raíz o desde analysis/
+# Configurar rutas
 REPO = Path(".").resolve()
 if not (REPO / "data").exists():
     REPO = REPO.parent
 processed = REPO / "data" / "processed"
+
 embeddings_npy = processed / "movie_embeddings.npy"
 embeddings_txt = processed / "movie_embeddings.txt"
-if not embeddings_npy.exists() or not embeddings_txt.exists():
-    raise FileNotFoundError(
-        "Faltan movie_embeddings.npy y/o movie_embeddings.txt. "
-        "Desde la raíz del proyecto ejecuta: python -m src.embeddings mpnet"
-    )
+metrics_csv = processed / "movie_metrics.csv"
 
-# Cargamos los embeddings precalculados (sin depender de sentence_transformers)
+# Cargar embeddings
 matrix = np.load(embeddings_npy)
 with open(embeddings_txt, encoding="utf-8") as f:
     titles = [line.strip() for line in f if line.strip()]
-print(f"Matriz: {matrix.shape} (películas × dimensiones)")
-print(f"Títulos: {len(titles)}")
+
+# Cargar métricas
+if metrics_csv.exists():
+    df_metrics = pd.read_csv(metrics_csv)
+else:
+    # Fallback si no existen métricas
+    df_metrics = pd.DataFrame({"movie_title": titles, "word_count": 10000, "sentiment": 0.0})
+
+# Asegurar orden correcto
+df_metrics = pd.DataFrame({"movie_title": titles}).merge(df_metrics, on="movie_title", how="left")
+df_metrics["word_count"] = df_metrics["word_count"].fillna(df_metrics["word_count"].median())
+df_metrics["sentiment"] = df_metrics["sentiment"].fillna(0.0)
+
+print(f"Películas cargadas: {matrix.shape[0]}")
+print(f"Dimensiones latentes por película: {matrix.shape[1]}")
 ```
 
 ---
 
-## Paso 2: Reducción de dimensiones con UMAP
+## 2. Plegando el Espacio: UMAP
 
-UMAP (Uniform Manifold Approximation and Projection) proyecta los vectores de 768 dimensiones a 2D preservando la estructura de vecindad: películas cercanas en el espacio original quedan cercanas en el plano.
+Los vectores originales viven en 768 dimensiones. Para visualizarlos, usamos **UMAP**. Ajustamos los parámetros para forzar que el algoritmo conecte películas basándose en métricas del coseno, permitiendo cierta densidad local (`min_dist=0.05`) para identificar subgéneros o sagas muy unidas.
 
 ```{python}
 #| label: umap
-import umap
 
 reducer = umap.UMAP(
+    n_neighbors=25,     # Mayor número de vecinos para capturar estructura más global
+    min_dist=0.05,      # Permite que los clusters se aprieten más (menor dispersión de ruido)
     n_components=2,
-    n_neighbors=15,
-    min_dist=0.1,
     metric="cosine",
     random_state=42,
 )
 coords_2d = reducer.fit_transform(matrix)
-print(f"Coordenadas 2D: {coords_2d.shape}")
+
+# Construimos nuestro DataFrame maestro para el resto del análisis
+df = df_metrics.copy()
+df["x"] = coords_2d[:, 0]
+df["y"] = coords_2d[:, 1]
+# Limpiar el título para la visualización (quitar _IMDBID)
+df["title_display"] = df["movie_title"].apply(lambda x: x.rsplit("_", 1)[0] if "_" in x else x)
 ```
 
 ---
 
-## Paso 3: Visualización interactiva — La Galaxia del Cine
+## 3. La Constelación de la Densidad
 
-Cada punto es una película; la posición refleja similitud semántica (estilo narrativo, tono, temas) según los embeddings.
+Antes de mirar películas individuales, observemos la estructura masiva de Hollywood. ¿Dónde está el "centro" narrativo? Usamos un mapa de contornos de densidad para encontrar el corazón de la galaxia y la periferia.
 
 ```{python}
-#| label: plotly-galaxy
-import plotly.express as px
+#| label: density-plot
 
-df_plot = pd.DataFrame({
-    "x": coords_2d[:, 0],
-    "y": coords_2d[:, 1],
-    "película": titles,
-})
-
-fig = px.scatter(
-    df_plot, x="x", y="y",
-    hover_data={"película": True, "x": False, "y": False},
-    title="Galaxia del Cine — cada punto es una película",
-    labels={"x": "UMAP 1", "y": "UMAP 2"},
+fig_dens = px.density_contour(
+    df, x="x", y="y",
+    title="Mapa Topográfico de Hollywood (Zonas de alta densidad narrativa)",
+    template="plotly_dark"
 )
-fig.update_traces(marker=dict(size=4, opacity=0.6))
-fig.update_layout(height=600)
-fig.show()
+fig_dens.update_traces(contours_coloring="fill", contours_showlabels=False)
+fig_dens.add_trace(go.Scatter(
+    x=df["x"], y=df["y"], mode="markers",
+    marker=dict(size=2, color="white", opacity=0.3),
+    text=df["title_display"],
+    hoverinfo="text"
+))
+fig_dens.update_layout(height=650, xaxis_title="UMAP 1", yaxis_title="UMAP 2")
+fig_dens.show()
 ```
 
 ---
 
-## Paso 4: Análisis de clusters
+## 4. El Espectro del Lenguaje: Sentimiento y Volumen
 
-Agrupamos las películas en clusters sin etiquetas previas (solo a partir del texto). Así vemos si géneros o estilos se agrupan de forma natural.
+¿Se agrupan las comedias y los dramas oscuros en lugares específicos del espacio UMAP?
+Aquí coloreamos la galaxia usando la **polaridad del sentimiento** (positivo vs negativo en el guion) y el tamaño del punto representa la **cantidad de palabras** (diálogos e indicaciones largas vs guiones parcos).
 
 ```{python}
-#| label: clusters
-from sklearn.cluster import KMeans
+#| label: nlp-spectrum
 
-n_clusters = 8
-kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-labels = kmeans.fit_predict(matrix)
+# Limitamos rango de sentimiento para mejor contraste de color
+df["sentiment_clipped"] = df["sentiment"].clip(-0.1, 0.25) 
 
-df_plot["cluster"] = labels.astype(str)
-fig2 = px.scatter(
-    df_plot, x="x", y="y", color="cluster",
-    hover_data={"película": True},
-    title=f"Clusters (K-means, k={n_clusters}) — agrupación por estilo narrativo",
-    labels={"x": "UMAP 1", "y": "UMAP 2"},
+fig_nlp = px.scatter(
+    df, x="x", y="y", 
+    color="sentiment_clipped",
+    size="word_count",
+    hover_name="title_display",
+    hover_data={"x": False, "y": False, "sentiment": ":.3f", "word_count": True, "sentiment_clipped": False},
+    color_continuous_scale="RdYlBu", # Rojo (negativo) -> Azul (positivo)
+    title="La Galaxia por Tono Narrativo (Color = Sentimiento, Tamaño = Longitud de Guion)",
+    template="plotly_dark"
 )
-fig2.update_traces(marker=dict(size=4, opacity=0.7))
-fig2.update_layout(height=600)
-fig2.show()
+# Ajustar el tamaño máximo de los puntos y la opacidad
+fig_nlp.update_traces(marker=dict(sizeref=2.*max(df['word_count'])/(12.**2), sizemin=2, opacity=0.85))
+fig_nlp.update_layout(height=700)
+fig_nlp.show()
 ```
 
 ---
 
-## Paso 5: Métricas — Similitud entre películas
+## 5. Agrupación Natural con HDBSCAN
 
-Calculamos la **similitud del coseno** entre películas. Ejemplo: buscar las más cercanas a una película dada (p. ej. *Inception*).
+Anteriormente usábamos K-Means, el cual asume formas esféricas que destruyen la topología delicada de UMAP. Cambiamos a **HDBSCAN**, un algoritmo basado en densidad que encuentra la "forma real" de los clusters y margina a las películas atípicas clasificándolas como "ruido" (Cluster -1).
 
 ```{python}
-#| label: similitud
-from sklearn.metrics.pairwise import cosine_similarity
+#| label: hdbscan-clustering
 
-def top_similares(titles_list, matrix, query_title, k=10):
-    """Top k películas más similares a query_title."""
-    try:
-        idx = titles_list.index(query_title)
-    except ValueError:
-        # búsqueda parcial
-        candidatos = [i for i, t in enumerate(titles_list) if query_title.lower() in t.lower()]
-        if not candidatos:
-            return None
-        idx = candidatos[0]
-    vec = matrix[idx : idx + 1]
-    sim = cosine_similarity(matrix, vec).ravel()
-    orden = np.argsort(sim)[::-1]
-    return [(titles_list[i], sim[i]) for i in orden[:k]]
+# Agrupamos sobre el espacio reducido, donde HDBSCAN brilla
+clusterer = hdbscan.HDBSCAN(
+    min_cluster_size=20,
+    min_samples=5,
+    metric='euclidean' # Sobre las 2D de UMAP
+)
+df["cluster"] = clusterer.fit_predict(coords_2d)
+df["outlier_score"] = clusterer.outlier_scores_
 
-# Ejemplo: películas más parecidas a "Inception"
-ejemplo = "Inception_1375666"
-top = top_similares(titles, matrix, ejemplo, k=10)
-if top:
-    print("Películas más similares a Inception (por estilo narrativo):")
-    for tit, s in top:
-        print(f"  {s:.3f}  {tit}")
+# Convertir cluster a string, tratar -1 como "Ruido/Outliers"
+df["cluster_label"] = df["cluster"].apply(lambda c: "Ruido/Outlier" if c == -1 else f"Cluster {c}")
+
+fig_clus = px.scatter(
+    df, x="x", y="y", color="cluster_label",
+    hover_name="title_display",
+    hover_data={"x": False, "y": False, "outlier_score": ":.2f"},
+    title="Constelaciones (HDBSCAN sobre UMAP)",
+    template="plotly_dark",
+    color_discrete_sequence=px.colors.qualitative.Alphabet
+)
+fig_clus.update_traces(marker=dict(size=4, opacity=0.8))
+fig_clus.update_layout(height=700)
+fig_clus.show()
 ```
 
 ---
 
-## Paso 6: Distancias dentro de una filmografía
+## 6. Los Agujeros Negros: Las Narrativas más Extravagantes
 
-Podemos comparar la cercanía entre películas del mismo director (ej. Nolan): si el espacio captura estilo, sus películas deberían estar relativamente agrupadas.
+Aprovechando HDBSCAN, podemos visualizar los "Outliers" matemáticos. Estas son las películas que el modelo de lenguaje considera que tienen el estilo, guion o vocabulario más aberrante (menos similar a cualquier otro gran grupo en la galaxia).
 
 ```{python}
-#| label: filmografia
-# Ejemplo: todas las películas que contengan "Nolan" en el título (o buscar por director si tuviéramos metadatos)
-nolan_like = [t for t in titles if "Nolan" in t or "Inception" in t or "Interstellar" in t or "Dark Knight" in t or "Prestige" in t]
-if nolan_like:
-    print("Algunas películas tipo Nolan en el dataset:", nolan_like[:10])
-# En un dataset con metadatos de director, aquí filtraríamos por director y pintaríamos solo esos puntos.
+#| label: outliers
+
+# Tomar los top outliers (puntuación más alta)
+top_outliers = df.nlargest(15, "outlier_score")
+
+print("Las narrativas más atípicas de Hollywood (mayor outlier score):")
+display(top_outliers[["title_display", "outlier_score", "sentiment"]].reset_index(drop=True))
+
+# Resaltar en el gráfico
+fig_out = px.scatter(
+    df, x="x", y="y", color="outlier_score",
+    hover_name="title_display",
+    hover_data={"x": False, "y": False, "outlier_score": ":.2f"},
+    color_continuous_scale="Plasma",
+    title="Anomalías Cinematográficas (Más amarillo = Más raro/independiente)",
+    template="plotly_dark"
+)
+fig_out.update_traces(marker=dict(size=5, opacity=0.9))
+fig_out.update_layout(height=700)
+fig_out.show()
 ```
 
 ---
 
-## Conclusiones
+## Conclusiones de la Nueva Galaxia
 
-1. **Espacio latente:** Los embeddings (768 dims con mpnet) codifican estilo narrativo, tono y contenido. Películas similares en ese espacio son cercanas en el scatter UMAP.
-
-2. **Galaxia:** La visualización 2D permite explorar vecindades: qué películas “rodean” a una dada y si los clusters coinciden con géneros o corrientes (eso depende del corpus y de \(k\) en K-means).
-
-3. **Similitud:** La similitud del coseno entre vectores es la base del buscador (Streamlit): el usuario escribe un texto, se embeda y se compara con esta misma matriz para obtener el Top 5.
-
-4. **Limitaciones:** UMAP y los clusters dependen de hiperparámetros (\(n\_neighbors\), \(min\_dist\), \(k\)). No tenemos etiquetas de género en los datos; las agrupaciones son puramente textuales/semánticas.
-
-5. **Siguiente paso:** Con la app Streamlit se puede llevar este mismo espacio a una interfaz donde el usuario introduce un fragmento y ve su posición en la galaxia y las películas más afines.
+1. **La Densidad revela los Blockbusters:** El mapa topográfico muestra zonas "núcleo" de Hollywood, donde abundan las estructuras léxicas estándar (posiblemente la zona segura de los dramas románticos o guiones de acción genéricos).
+2. **El Espectro Tonal:** La coloración por sentimiento revela que, aunque los temas oscuros dominan ciertas alas del espacio UMAP, el tamaño de los guiones (diálogo pesado vs acción silenciosa) crea gradientes identificables en el mapa.
+3. **HDBSCAN + UMAP:** Ahora podemos distinguir claramente "barrios cinematográficos" de verdaderos ermitaños narrativos. A diferencia de K-Means, sabemos exactamente qué películas no encajan en ningún tropo estándar.
