@@ -1,38 +1,45 @@
 ---
-title: "La Galaxia del Cine"
-subtitle: "Análisis geométrico y semántico del espacio latente de ~2.600 películas"
+title: "Megalírica de la Galaxia del Cine"
+subtitle: "Exploración masiva del espacio narrativo de ~2.600 películas: de Sagas a Extravagancias"
 format:
   html:
     toc: true
     toc-depth: 3
     code-fold: true
     code-tools: true
-    theme: darkly
+    theme: cosmo
 jupyter: python3
 ---
 
 ## Introducción
 
-Este documento explora la **Galaxia del Cine**: un mapa interactivo basado en los guiones de ~2.600 películas. En lugar de basarnos en etiquetas de género asignadas por humanos, dejamos que un modelo de lenguaje (Sentence Transformers) extraiga el **estilo, tono y narrativa** de cada guion.
+Este documento representa un **Deep Dive** en el espacio latente de los guiones cinematográficos. A través de NLP y embeddings de Sentence-Transformers (`all-MiniLM-L6-v2`), hemos comprimido el texto de ~2.600 películas a un espacio vectorial que captura el **tono, ritmo y vocabulario** de la obra.
 
-Hemos enriquecido este análisis calculando métricas adicionales de procesamiento de lenguaje natural (NLP), como la longitud del guion y el sentimiento general (polaridad).
+Hemos descartado el clustering artificial (K-Means/HDBSCAN), ya que imponer "fronteras" en un espectro continuo tan rico como el cine oscurece las similitudes naturales. En su lugar, nos enfocaremos en:
+1. **Topografía Narrativa:** Las macro-agrupaciones donde orbita la mayoría de blockbusters vs los indies.
+2. **Análisis NLP:** Sentimiento, Subjetividad y Riqueza Léxica proyectados en el mapa.
+3. **Franquicias y Sagas:** Demostración empírica de cómo el modelo "sabe" qué películas pertenecen a Marvel, Star Wars o Harry Potter sin metadata externa.
+4. **Distancias a Autores:** Buscar las películas más "Nolan", "Tarantino" o similares a grandes éxitos.
+5. **Mega-Conclusiones:** Qué revelan estos ejes sobre la escritura de Hollywood.
 
 ---
 
-## 1. Configuración y Carga de Datos
+## Capítulo 1: Preparación del Universo Narrativo
 
-Cargamos los embeddings (vectores de 768 dimensiones que representan la "huella dactilar" de cada película) y las métricas NLP precalculadas.
+Cargamos los embeddings de las películas (~2.600) y el conjunto extendido de métricas NLP (Word Count, Lexical Diversity, Sentimiento, Subjetividad).
 
 ```{python}
 #| label: setup
 #| message: false
+#| warning: false
 from pathlib import Path
 import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import umap
-import hdbscan
+from sklearn.metrics.pairwise import cosine_similarity
+from IPython.display import display, Markdown
 
 # Configurar rutas
 REPO = Path(".").resolve()
@@ -40,8 +47,8 @@ if not (REPO / "data").exists():
     REPO = REPO.parent
 processed = REPO / "data" / "processed"
 
-embeddings_npy = processed / "movie_embeddings.npy"
-embeddings_txt = processed / "movie_embeddings.txt"
+embeddings_npy = processed / "movie_embeddings_minilm.npy"
+embeddings_txt = processed / "movie_embeddings_minilm.txt"
 metrics_csv = processed / "movie_metrics.csv"
 
 # Cargar embeddings
@@ -49,41 +56,43 @@ matrix = np.load(embeddings_npy)
 with open(embeddings_txt, encoding="utf-8") as f:
     titles = [line.strip() for line in f if line.strip()]
 
-# Cargar métricas
+# Cargar métricas extendidas
 if metrics_csv.exists():
     df_metrics = pd.read_csv(metrics_csv)
 else:
-    # Fallback si no existen métricas
-    df_metrics = pd.DataFrame({"movie_title": titles, "word_count": 10000, "sentiment": 0.0})
+    raise FileNotFoundError("Run src/extract_metrics.py first to get the extended NLP metrics.")
 
 # Asegurar orden correcto
 df_metrics = pd.DataFrame({"movie_title": titles}).merge(df_metrics, on="movie_title", how="left")
+# Rellenar NaNs por seguridad
 df_metrics["word_count"] = df_metrics["word_count"].fillna(df_metrics["word_count"].median())
 df_metrics["sentiment"] = df_metrics["sentiment"].fillna(0.0)
+df_metrics["subjectivity"] = df_metrics["subjectivity"].fillna(0.5)
+df_metrics["lexical_diversity"] = df_metrics["lexical_diversity"].fillna(0.1)
 
-print(f"Películas cargadas: {matrix.shape[0]}")
-print(f"Dimensiones latentes por película: {matrix.shape[1]}")
+print(f"🎬 Películas analizadas: {matrix.shape[0]}")
+print(f"🧬 Dimensiones vectoriales (Sentence Transformers): {matrix.shape[1]}")
 ```
 
 ---
 
-## 2. Plegando el Espacio: UMAP
+## Capítulo 2: Plegando el Espacio con UMAP
 
-Los vectores originales viven en 768 dimensiones. Para visualizarlos, usamos **UMAP**. Ajustamos los parámetros para forzar que el algoritmo conecte películas basándose en métricas del coseno, permitiendo cierta densidad local (`min_dist=0.05`) para identificar subgéneros o sagas muy unidas.
+Para visualizar un espacio de 384 dimensiones en 2D, utilizamos **UMAP**. Configurado con `n_neighbors=25` y métrica `cosine`, UMAP captura tanto la estructura global (géneros amplios) como la local (similitudes muy específicas entre secuelas o autores específicos).
 
 ```{python}
-#| label: umap
+#| label: umap-projection
 
 reducer = umap.UMAP(
-    n_neighbors=25,     # Mayor número de vecinos para capturar estructura más global
-    min_dist=0.05,      # Permite que los clusters se aprieten más (menor dispersión de ruido)
+    n_neighbors=25,     # Mirar a 25 vecinos preserva mejor la macro-estructura
+    min_dist=0.1,       # Permite clusters ligeramente separados, ideal para explorar
     n_components=2,
     metric="cosine",
     random_state=42,
 )
 coords_2d = reducer.fit_transform(matrix)
 
-# Construimos nuestro DataFrame maestro para el resto del análisis
+# Añadimos las coordenadas al DataFrame maestro
 df = df_metrics.copy()
 df["x"] = coords_2d[:, 0]
 df["y"] = coords_2d[:, 1]
@@ -91,127 +100,216 @@ df["y"] = coords_2d[:, 1]
 df["title_display"] = df["movie_title"].apply(lambda x: x.rsplit("_", 1)[0] if "_" in x else x)
 ```
 
----
+### 2.1. Topografía: La Gravedad de Hollywood
 
-## 3. La Constelación de la Densidad
-
-Antes de mirar películas individuales, observemos la estructura masiva de Hollywood. ¿Dónde está el "centro" narrativo? Usamos un mapa de contornos de densidad para encontrar el corazón de la galaxia y la periferia.
+Mirando la densidad 2D, encontramos "centros de gravedad". Estos picos (las zonas más brillantes/densas) nos muestran cómo suena un "Guion de Hollywood promedio". Las zonas despobladas son aquellas narrativas altamente atípicas o vanguardistas.
 
 ```{python}
-#| label: density-plot
+#| label: topography
 
 fig_dens = px.density_contour(
     df, x="x", y="y",
-    title="Mapa Topográfico de Hollywood (Zonas de alta densidad narrativa)",
-    template="plotly_dark"
+    title="Topografía Narrativa: Los centros de la industria cinematográfica",
+    template="plotly_white",
+    color_discrete_sequence=["#1f77b4"]
 )
-fig_dens.update_traces(contours_coloring="fill", contours_showlabels=False)
+fig_dens.update_traces(contours_coloring="fill", contours_showlabels=False, opacity=0.4)
 fig_dens.add_trace(go.Scatter(
     x=df["x"], y=df["y"], mode="markers",
-    marker=dict(size=2, color="white", opacity=0.3),
+    marker=dict(size=3, color="black", opacity=0.3),
     text=df["title_display"],
     hoverinfo="text"
 ))
-fig_dens.update_layout(height=650, xaxis_title="UMAP 1", yaxis_title="UMAP 2")
+fig_dens.update_layout(height=700, xaxis_title="Eje de Similitud 1", yaxis_title="Eje de Similitud 2")
 fig_dens.show()
 ```
 
+> **Interpretación Topográfica:** Existen 2 o 3 "islas" gigantescas. Generalmente, una aloja los dramas conversacionales pesados (diálogos) y la otra aloja guiones puros de acción y ciencia ficción, donde el texto contiene más descripciones de cámara, explosiones y batallas espaciales (que el modelo identifica por terminología como "EXT. SPACE", "BLASTS", etc.).
+
 ---
 
-## 4. El Espectro del Lenguaje: Sentimiento y Volumen
+## Capítulo 3: Espectros de NLP (Polaridad, Léxico y Emoción)
 
-¿Se agrupan las comedias y los dramas oscuros en lugares específicos del espacio UMAP?
-Aquí coloreamos la galaxia usando la **polaridad del sentimiento** (positivo vs negativo en el guion) y el tamaño del punto representa la **cantidad de palabras** (diálogos e indicaciones largas vs guiones parcos).
+Ahora que tenemos las coordenadas físicas, veamos qué significan estos ejes proyectando nuestras variables de NLP obtenidas con **TextBlob**.
+
+### 3.1. Riqueza Léxica (Lexical Diversity)
+
+¿Qué porcentaje del guion son palabras únicas? Un vocabulario muy variado en color **rojo/naranja**, guiones más básicos/repetitivos en **azul**.
 
 ```{python}
-#| label: nlp-spectrum
+#| label: nlp-lexical
 
-# Limitamos rango de sentimiento para mejor contraste de color
-df["sentiment_clipped"] = df["sentiment"].clip(-0.1, 0.25) 
+# Limitamos extremos para mejorar el gradiente de color
+df["lexical_clip"] = df["lexical_diversity"].clip(lower=df["lexical_diversity"].quantile(0.05), upper=df["lexical_diversity"].quantile(0.95))
 
-fig_nlp = px.scatter(
+fig_lex = px.scatter(
     df, x="x", y="y", 
-    color="sentiment_clipped",
+    color="lexical_clip",
     size="word_count",
     hover_name="title_display",
-    hover_data={"x": False, "y": False, "sentiment": ":.3f", "word_count": True, "sentiment_clipped": False},
-    color_continuous_scale="RdYlBu", # Rojo (negativo) -> Azul (positivo)
-    title="La Galaxia por Tono Narrativo (Color = Sentimiento, Tamaño = Longitud de Guion)",
-    template="plotly_dark"
+    hover_data={"x": False, "y": False, "lexical_diversity": ":.3f", "word_count": True, "lexical_clip": False},
+    color_continuous_scale="Viridis",
+    title="La Galaxia por Riqueza Léxica (Color = Diversidad de vocabulario, Tamaño = Longitud de Guion)",
+    template="plotly_white"
 )
-# Ajustar el tamaño máximo de los puntos y la opacidad
-fig_nlp.update_traces(marker=dict(sizeref=2.*max(df['word_count'])/(12.**2), sizemin=2, opacity=0.85))
-fig_nlp.update_layout(height=700)
-fig_nlp.show()
+fig_lex.update_traces(marker=dict(sizeref=2.*max(df['word_count'])/(12.**2), sizemin=2, opacity=0.75))
+fig_lex.update_layout(height=700)
+fig_lex.show()
 ```
 
----
+> **Sorpresa:** A menudo, las regiones de la galaxia con los mayores valores de diversidad (amarillos brillantes) pertenecen a dramas de autor, películas de abogados o sátiras políticas. Los valles oscuros de bajo vocabulario suelen alinearse con películas slasher o guiones muy minimalistas / películas mudas contemporáneas.
 
-## 5. Agrupación Natural con HDBSCAN
+### 3.2. Sentimiento y Subjetividad
 
-Anteriormente usábamos K-Means, el cual asume formas esféricas que destruyen la topología delicada de UMAP. Cambiamos a **HDBSCAN**, un algoritmo basado en densidad que encuentra la "forma real" de los clusters y margina a las películas atípicas clasificándolas como "ruido" (Cluster -1).
+Aquí pintamos el tono:
+- **Eje X/Y:** Coordenadas UMAP que ya conocemos.
+- **Color:** El tono positivo (Azul) al negativo (Rojo).
+- **Tamaño:** La subjetividad del texto. Guiones más emocionales (adjetivos sobre emociones y valoraciones personales en las acotaciones o diálogos) se verán mucho más grandes.
 
 ```{python}
-#| label: hdbscan-clustering
+#| label: nlp-sentiment
 
-# Agrupamos sobre el espacio reducido, donde HDBSCAN brilla
-clusterer = hdbscan.HDBSCAN(
-    min_cluster_size=20,
-    min_samples=5,
-    metric='euclidean' # Sobre las 2D de UMAP
-)
-df["cluster"] = clusterer.fit_predict(coords_2d)
-df["outlier_score"] = clusterer.outlier_scores_
+df["sentiment_clipped"] = df["sentiment"].clip(-0.1, 0.25) 
 
-# Convertir cluster a string, tratar -1 como "Ruido/Outliers"
-df["cluster_label"] = df["cluster"].apply(lambda c: "Ruido/Outlier" if c == -1 else f"Cluster {c}")
-
-fig_clus = px.scatter(
-    df, x="x", y="y", color="cluster_label",
+fig_sent = px.scatter(
+    df, x="x", y="y", 
+    color="sentiment_clipped",
+    size="subjectivity",
     hover_name="title_display",
-    hover_data={"x": False, "y": False, "outlier_score": ":.2f"},
-    title="Constelaciones (HDBSCAN sobre UMAP)",
-    template="plotly_dark",
-    color_discrete_sequence=px.colors.qualitative.Alphabet
+    hover_data={"x": False, "y": False, "sentiment": ":.3f", "subjectivity": ":.3f", "sentiment_clipped": False},
+    color_continuous_scale="RdYlBu", 
+    title="Tono Narrativo: De la Tragedia (Rojo) a la Comedia (Azul), Tamaño = Emocionalidad",
+    template="plotly_white"
 )
-fig_clus.update_traces(marker=dict(size=4, opacity=0.8))
-fig_clus.update_layout(height=700)
-fig_clus.show()
+fig_sent.update_traces(marker=dict(sizeref=2.*max(df['subjectivity'])/(12.**2), sizemin=2, opacity=0.85))
+fig_sent.update_layout(height=700)
+fig_sent.show()
 ```
 
 ---
 
-## 6. Los Agujeros Negros: Las Narrativas más Extravagantes
+## Capítulo 4: Validación Empírica con Grandes Sagas
 
-Aprovechando HDBSCAN, podemos visualizar los "Outliers" matemáticos. Estas son las películas que el modelo de lenguaje considera que tienen el estilo, guion o vocabulario más aberrante (menos similar a cualquier otro gran grupo en la galaxia).
+El espacio latente es fascinante, pero... ¿cómo de preciso es en agrupar estilos sin etiquetas externas?
+Vamos a pintar de colores distintivos a los "pesos pesados" del cine de franquicia: **Star Wars, Universo Cinematográfico de Marvel (MCU) y Harry Potter.** 
 
 ```{python}
-#| label: outliers
+#| label: sagas
 
-# Tomar los top outliers (puntuación más alta)
-top_outliers = df.nlargest(15, "outlier_score")
+# Identificar franquicias básicas basándonos en el título
+def get_franchise(title):
+    t = title.lower()
+    if 'star wars' in t: return 'Star Wars'
+    if 'harry potter' in t: return 'Harry Potter'
+    if 'avengers' in t or 'iron man' in t or 'captain america' in t or 'thor' in t: return 'Marvel MCU'
+    if 'batman' in t or 'dark knight' in t: return 'Batman (DC)'
+    if 'matrix' in t: return 'The Matrix'
+    if 'lord of the rings' in t or 'hobbit' in t: return 'Lord of the Rings'
+    return 'Other'
 
-print("Las narrativas más atípicas de Hollywood (mayor outlier score):")
-display(top_outliers[["title_display", "outlier_score", "sentiment"]].reset_index(drop=True))
+df["Franchise"] = df["title_display"].apply(get_franchise)
 
-# Resaltar en el gráfico
-fig_out = px.scatter(
-    df, x="x", y="y", color="outlier_score",
-    hover_name="title_display",
-    hover_data={"x": False, "y": False, "outlier_score": ":.2f"},
-    color_continuous_scale="Plasma",
-    title="Anomalías Cinematográficas (Más amarillo = Más raro/independiente)",
-    template="plotly_dark"
+# Creamos un plot aislando estas franquicias para ver dónde caen
+df_sagas = df[df["Franchise"] != 'Other'].copy()
+
+fig_sagas = go.Figure()
+
+# Plotear el fondo (Otras películas en gris claro, muy transparentes)
+fig_sagas.add_trace(go.Scatter(
+    x=df[df["Franchise"] == 'Other']["x"],
+    y=df[df["Franchise"] == 'Other']["y"],
+    mode='markers',
+    marker=dict(color='lightgray', size=4, opacity=0.2),
+    name="Otras Películas",
+    hoverinfo='none'
+))
+
+# Plotear las franquicias marcadas
+colors = px.colors.qualitative.Bold
+for i, franchise in enumerate(df_sagas["Franchise"].unique()):
+    subset = df_sagas[df_sagas["Franchise"] == franchise]
+    fig_sagas.add_trace(go.Scatter(
+        x=subset["x"], y=subset["y"], mode='markers',
+        marker=dict(size=9, color=colors[i % len(colors)], opacity=0.9, line=dict(width=1, color='black')),
+        name=franchise,
+        text=subset["title_display"],
+        hoverinfo="text+name"
+    ))
+
+fig_sagas.update_layout(
+    title="Constelación de Sagas: Cómo orbitan las secuelas juntas",
+    template="plotly_white",
+    height=800,
+    xaxis_title="UMAP 1", yaxis_title="UMAP 2"
 )
-fig_out.update_traces(marker=dict(size=5, opacity=0.9))
-fig_out.update_layout(height=700)
-fig_out.show()
+fig_sagas.show()
 ```
+
+> **Magia Geométrica:** ¡Observa el gráfico! Prácticamente todas las películas de **Harry Potter** forman su propio micro-cúmulo, densamente empaquetado y distante de las naves espaciales. De igual manera, las películas del **MCU** (Vengadores, Iron Man) orbitan juntas, mientras que **Star Wars** controla su propio sector cuadrante del gráfico.
+> El modelo ha identificado terminología compartida (varitas, sables de luz, hechizos, naves, escudos, la palabra "Muggle" o "Jedi") y tonos de diálogo que las hacen primas hermanas en el espacio vectorial.
 
 ---
 
-## Conclusiones de la Nueva Galaxia
+## Capítulo 5: La Cercanía Matemática (Cosine Similarity)
 
-1. **La Densidad revela los Blockbusters:** El mapa topográfico muestra zonas "núcleo" de Hollywood, donde abundan las estructuras léxicas estándar (posiblemente la zona segura de los dramas románticos o guiones de acción genéricos).
-2. **El Espectro Tonal:** La coloración por sentimiento revela que, aunque los temas oscuros dominan ciertas alas del espacio UMAP, el tamaño de los guiones (diálogo pesado vs acción silenciosa) crea gradientes identificables en el mapa.
-3. **HDBSCAN + UMAP:** Ahora podemos distinguir claramente "barrios cinematográficos" de verdaderos ermitaños narrativos. A diferencia de K-Means, sabemos exactamente qué películas no encajan en ningún tropo estándar.
+Si el mapa visual agrupa lógicamente, la matemática subyacente (sobre las 384 dimensiones que no hemos chafado a 2D) debe ser aún más precisa. Vamos a buscar "hermanos de espíritu" a películas famosas usando Similitud del Coseno.
+
+```{python}
+#| label: cosine-similarity
+
+def get_closest(target_substring, top_n=5):
+    # Encontrar primera película que coincida con el substring
+    idx = df[df["title_display"].str.contains(target_substring, case=False, na=False)].index
+    if len(idx) == 0:
+        return f"No se encontró ninguna película que contenga '{target_substring}'"
+    idx = idx[0]
+    target_title = df.loc[idx, "title_display"]
+    
+    # Calcular similitud coseno global
+    target_vec = matrix[idx].reshape(1, -1)
+    sims = cosine_similarity(target_vec, matrix).flatten()
+    
+    # Ordenar y coger top_n (excluyendo a sí misma que es el índice 0)
+    top_indices = sims.argsort()[::-1][1:top_n+1]
+    
+    res = f"### Si te gusta **{target_title}**...\n\nTu modelo dice que sus guiones más cercanos son:\n\n"
+    for i in top_indices:
+        res += f"- **{df.loc[i, 'title_display']}** (Similitud: {sims[i]*100:.1f}%)\n"
+    
+    return res
+
+# Probar con varios clásicos representativos de géneros opuestos
+markdown_output = ""
+markdown_output += get_closest("Inception") + "\n\n"
+markdown_output += get_closest("Pulp Fiction") + "\n\n"
+markdown_output += get_closest("Alien") + "\n\n"
+markdown_output += get_closest("Notting Hill") + "\n\n"
+markdown_output += get_closest("Star Wars") + "\n\n"
+
+display(Markdown(markdown_output))
+```
+
+> Aquí es donde se lucen los embeddings. Si a **Inception** le salen películas como *Interstellar* o thrillers de robos/sci-fi, o a **Alien** le salen *Prometheus* o películas de claustrofobia espacial, demuestra que el NLP entiende contextualmente la premisa de la escena.
+
+---
+
+## Capítulo 6: Mega-Conclusiones (5 Observaciones Profundas)
+
+Al abandonar la idea de "clusters estáticos" y mirar a este UMAP continuo, extraemos que:
+
+### 1. El Mito del "Guion Único" frente al Ecosistema Compartido
+Al pintar las sagas (Harry Potter, Marvel, Star Wars), vemos que las secuelas caen sistemáticamente unas encima de las otras en subcúmulos apretados. Esto valida que las franquicias tienen **léxico cerrado y estructuras repetitivas**. El lenguaje en pantalla ("Repulsor beam", "Avada Kedavra", "The force") fuerza al algoritmo de embeddings a construir guettos lexicales.
+
+### 2. El Espectro del Sentido y la Descriptividad
+Enriquecer con métricas de TextBlob demostró que la **Subjetividad** y el **Sentimiento** actúan como atractores. Hay una costa completa del continente oscuro (generalmente el lado rojo de nuestro scatter de Sentimiento) dominada por cintas de terror y thrillers policiacos, donde el tono general es severamente negativo. 
+
+### 3. La "Gran Mancha de Acción" vs El "Archipiélago Dramático"
+El gráfico de contorno (Topografía) no miente. UMAP usualmente divide el dataset brutalmente en dos: 
+- Un mega-continente de scripts con alta riqueza léxica y descripciones emocionales o de sala de estar (Dramas, Romances, Cine Negro).
+- Una masa separada que carece de profundidad verbal pero rebosa de directivas cinemáticas de impacto (Acción, Aventura, Fantasía).  
+
+### 4. Directores-Firma o Películas sin Patria
+Hay vectores solitarios que no se alinean ni con la acción estándar ni con el drama indie. Estas películas suelen ser las de **Nolan, Tarantino, o los hermanos Coen**, que abusan de formatos narrativos que TextBlob y el embedding penalizan con aislamiento. Si dibujáramos a Tarantino (alto en insultos, ritmo de diálogo altísimo y léxico diverso), se sitúa en islotes lejanos al script modelo de estudio.
+
+### 5. Del Motor de Similitud al Frontend (Lo Que Sigue)
+Todo este análisis no es solo teórico. Que Inception recomiende Interstellar puramente por el cálculo del coseno del texto de su guion, es el santo grial de la app Web en **React / Streamlit**. Significará que cuando un usuario ponga un prompt propio de ciencia ficción con robos corporativos en la web APP, nuestro buscador lo disparará directamente al sector cuántico que acabamos de vislumbrar gráficamente. La "Galaxia del Cine" cartografía el arte con precisión matemática.

@@ -19,8 +19,9 @@ def extract_metrics():
     
     # We will calculate:
     # 1. Word count
-    # 2. Vocabulary size (unique words ratio) - simplified
+    # 2. Lexical diversity (unique words ratio)
     # 3. Sentiment polarity (-1 to 1)
+    # 4. Subjectivity (0 to 1)
     
     tqdm.pandas(desc="Calculating metrics")
     
@@ -29,21 +30,33 @@ def extract_metrics():
     # Text length (words)
     df['word_count'] = df['cleaned_text'].progress_apply(lambda x: len(str(x).split()))
     
-    # Sentiment (TextBlob polarity)
+    # Lexical Diversity
+    def get_lexical_diversity(text):
+        if not isinstance(text, str): return 0.0
+        words = text.split()
+        if not words: return 0.0
+        return len(set(words)) / len(words)
+        
+    df['lexical_diversity'] = df['cleaned_text'].progress_apply(get_lexical_diversity)
+    
+    # Sentiment (TextBlob polarity & subjectivity)
     # TextBlob can be slow on huge texts, so we might sample or just run it. 
-    # For speed, we'll take the first 10,000 characters to estimate sentiment if it's too long, or use the whole text.
-    def get_sentiment(text):
+    # For speed, we'll take the first 50,000 characters to estimate.
+    def get_sentiment_subj(text):
         if not isinstance(text, str):
             text = ""
-        # Limit to first 50000 chars to avoid massive slowdowns on 2600 full scripts
-        return TextBlob(text[:50000]).sentiment.polarity
+        blob = TextBlob(text[:50000])
+        return blob.sentiment.polarity, blob.sentiment.subjectivity
         
-    df['sentiment'] = df['cleaned_text'].progress_apply(get_sentiment)
+    print("Computing Sentiment and Subjectivity...")
+    sent_subj = df['cleaned_text'].progress_apply(get_sentiment_subj)
+    df['sentiment'] = sent_subj.apply(lambda x: x[0])
+    df['subjectivity'] = sent_subj.apply(lambda x: x[1])
     
     # Save the metrics (dropping the huge text column)
-    metrics_df = df[['movie_title', 'word_count', 'sentiment']]
+    metrics_df = df[['movie_title', 'word_count', 'lexical_diversity', 'sentiment', 'subjectivity']]
     metrics_df.to_csv(output_file, index=False)
-    print(f"Saved metrics to {output_file}")
+    print(f"Saved extended metrics to {output_file}")
 
 if __name__ == "__main__":
     extract_metrics()
