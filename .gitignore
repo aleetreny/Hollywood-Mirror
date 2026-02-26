@@ -69,3 +69,10 @@ data/processed/*
 # ------------------------------
 artifacts/
 artifacts/**/*
+
+# ------------------------------
+# Node / Vite frontend
+# ------------------------------
+node_modules/
+dist/
+*.log
