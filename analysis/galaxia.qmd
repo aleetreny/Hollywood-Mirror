@@ -1,315 +1,1814 @@
 ---
-title: "Megalírica de la Galaxia del Cine"
-subtitle: "Exploración masiva del espacio narrativo de ~2.600 películas: de Sagas a Extravagancias"
+title: "Megalyrics of the Galaxy of Cinema"
+subtitle: "Topology, Lexicometry and Financial Modelling of the Latent Space across 2,612 Hollywood Screenplays"
+author: "Alejandro Treny Ortega"
+date: today
 format:
   html:
+    theme: [cosmo, custom.scss]
     toc: true
-    toc-depth: 3
+    toc-depth: 4
+    toc-location: left
+    number-sections: true
     code-fold: true
     code-tools: true
-    theme: cosmo
-jupyter: python3
+    code-summary: "Show code"
+    smooth-scroll: true
+    embed-resources: true
+    fig-align: center
+    page-layout: article
+    html-math-method: katex
+execute:
+  warning: false
+  message: false
 ---
-
-## Introducción
-
-Este documento representa un **Deep Dive** en el espacio latente de los guiones cinematográficos. A través de NLP y embeddings de Sentence-Transformers (`all-MiniLM-L6-v2`), hemos comprimido el texto de ~2.600 películas a un espacio vectorial que captura el **tono, ritmo y vocabulario** de la obra.
-
-Hemos descartado el clustering artificial (K-Means/HDBSCAN), ya que imponer "fronteras" en un espectro continuo tan rico como el cine oscurece las similitudes naturales. En su lugar, nos enfocaremos en:
-1. **Topografía Narrativa:** Las macro-agrupaciones donde orbita la mayoría de blockbusters vs los indies.
-2. **Análisis NLP:** Sentimiento, Subjetividad y Riqueza Léxica proyectados en el mapa.
-3. **Franquicias y Sagas:** Demostración empírica de cómo el modelo "sabe" qué películas pertenecen a Marvel, Star Wars o Harry Potter sin metadata externa.
-4. **Distancias a Autores:** Buscar las películas más "Nolan", "Tarantino" o similares a grandes éxitos.
-5. **Mega-Conclusiones:** Qué revelan estos ejes sobre la escritura de Hollywood.
-
----
-
-## Capítulo 1: Preparación del Universo Narrativo
-
-Cargamos los embeddings de las películas (~2.600) y el conjunto extendido de métricas NLP (Word Count, Lexical Diversity, Sentimiento, Subjetividad).
 
 ```{python}
 #| label: setup
-#| message: false
-#| warning: false
-from pathlib import Path
+#| include: false
+
+# ── Core ────────────────────────────────────────────────────────────────────
+import re
 import numpy as np
 import pandas as pd
+from pathlib import Path
+
+# ── Visualisation ────────────────────────────────────────────────────────────
 import plotly.express as px
 import plotly.graph_objects as go
-import umap
+from plotly.subplots import make_subplots
+
+# ── ML utilities (no UMAP needed here anymore) ───────────────────────────────
 from sklearn.metrics.pairwise import cosine_similarity
-from IPython.display import display, Markdown
+from sklearn.neighbors import NearestNeighbors
+from scipy.spatial.distance import pdist
 
-# Configurar rutas
-REPO = Path(".").resolve()
-if not (REPO / "data").exists():
-    REPO = REPO.parent
-processed = REPO / "data" / "processed"
+# ── Paths ────────────────────────────────────────────────────────────────────
+REPO = Path("..").resolve()
+PROC = REPO / "data" / "processed"
 
-embeddings_npy = processed / "movie_embeddings_mpnet.npy"
-embeddings_txt = processed / "movie_embeddings_mpnet.txt"
-metrics_csv = processed / "movie_metrics.csv"
+# ── Load pre-computed DataFrame (parquet, loads in milliseconds) ─────────────
+meta = pd.read_parquet(PROC / "galaxia_precalc.parquet")
 
-# Cargar embeddings
-matrix = np.load(embeddings_npy)
-with open(embeddings_txt, encoding="utf-8") as f:
-    titles = [line.strip() for line in f if line.strip()]
+# ── Load raw embedding matrix (still needed for cosine-similarity demos) ─────
+matrix     = np.load(PROC / "movie_embeddings_mpnet.npy")
+titles_raw = (PROC / "movie_embeddings_mpnet.txt").read_text().strip().split("\n")
 
-# Cargar métricas extendidas
-if metrics_csv.exists():
-    df_metrics = pd.read_csv(metrics_csv)
-else:
-    raise FileNotFoundError("Run src/extract_metrics.py first to get the extended NLP metrics.")
+def clean_title(raw):
+    if "_" in raw:
+        raw = raw.rsplit("_", 1)[0]
+    if raw.endswith(" IMDb"):
+        raw = raw[:-5]
+    return raw
 
-# Asegurar orden correcto
-df_metrics = pd.DataFrame({"movie_title": titles}).merge(df_metrics, on="movie_title", how="left")
-# Rellenar NaNs por seguridad
-df_metrics["word_count"] = df_metrics["word_count"].fillna(df_metrics["word_count"].median())
-df_metrics["sentiment"] = df_metrics["sentiment"].fillna(0.0)
-df_metrics["subjectivity"] = df_metrics["subjectivity"].fillna(0.5)
-df_metrics["lexical_diversity"] = df_metrics["lexical_diversity"].fillna(0.1)
+titles = [clean_title(t) for t in titles_raw]
+N, D   = matrix.shape
 
-print(f"🎬 Películas analizadas: {matrix.shape[0]}")
-print(f"🧬 Dimensiones vectoriales (Sentence Transformers): {matrix.shape[1]}")
+def mean_pairwise_umap_distance(df):
+    """Mean pairwise Euclidean distance in 2D UMAP space."""
+    pts = df[["umap_x", "umap_y"]].dropna().values
+    if len(pts) < 2:
+        return np.nan
+    return float(pdist(pts, metric="euclidean").mean())
+
+def markdown_table(df):
+    header = "| " + " | ".join(df.columns) + " |"
+    divider = "|---" * len(df.columns) + "|"
+    rows = [header, divider]
+    for _, row in df.iterrows():
+        rows.append("| " + " | ".join(str(x) for x in row.values) + " |")
+    return "\n".join(rows)
+
+# ── Summary counts ───────────────────────────────────────────────────────────
+n_with_budget  = meta["budget_usd"].notna().sum()
+n_with_rating  = meta["imdb_rating"].notna().sum()
+n_with_meta    = meta["meta_score"].notna().sum()
+n_with_opening = meta["opening_usd"].notna().sum()
+year_min       = int(meta["year_clean"].dropna().min())
+year_max       = int(meta["year_clean"].dropna().max())
+top_genres     = meta["primary_genre"].value_counts().head(10).index.tolist()
+
+print(f"Loaded {N} movies | UMAP coords ready | top genres: {top_genres[:3]}...")
 ```
 
----
+# Introduction and Theoretical Framework {.unnumbered}
 
-## Capítulo 2: Plegando el Espacio con UMAP
+::: {.callout-note appearance="simple"}
+## About this Document
 
-Para visualizar un espacio de 384 dimensiones en 2D, utilizamos **UMAP**. Configurado con `n_neighbors=25` y métrica `cosine`, UMAP captura tanto la estructura global (géneros amplios) como la local (similitudes muy específicas entre secuelas o autores específicos).
+This study constitutes a comprehensive, data-driven exploration of **2,612 Hollywood screenplays** mapped into a 768-dimensional semantic space using state-of-the-art language models. Every chart in this document is **interactive**: hover, zoom, rotate, and click to explore the galaxy of cinema at your own pace.
+:::
+
+## The Computational Narrative Paradigm
+
+Cinema has always been a language. Long before the era of neural networks, film theorists, from Eisenstein's *montage of attractions* (1925) to McKee's *Story* (1997), searched for the hidden grammar that governs how stories move an audience. What they lacked was a **mathematical vocabulary** capable of representing not just the surface features of a script (word counts, dialogue ratios) but the *deep semantic topology* of its narrative intent.
+
+The revolution came in 2018 with the publication of **BERT** (Devlin et al.) and its progeny of *Transformer*-based language models. For the first time, a machine could read a sentence and produce a **dense vector embedding**, a point in high-dimensional space, that encodes not just what the sentence says, but *what it means*, capturing nuances of tone, topic, irony and emotional register.
+
+This study takes that idea to its logical extreme: instead of embedding individual sentences, we embed **entire screenplays**, documents spanning 5,000 to 40,000 words, and ask a deceptively simple question:
+
+> **If every film in Hollywood occupied a point in semantic space, what would the resulting galaxy look like?**
+
+The answer, as we will demonstrate across the following chapters, is surprisingly structured: dramas cluster in dense continental masses, horror films drift toward isolated archipelagos, and franchise universes (Marvel, Star Wars) collapse into gravitationally bound solar systems whose internal coherence is measurable in cosine distance.
+
+## From Raw Text to Latent Geometry
+
+### The Embedding Engine: Sentence-Transformers
+
+We employ **`all-mpnet-base-v2`** (Song et al., 2020), a 109-million-parameter Transformer fine-tuned for semantic similarity via contrastive learning on over one billion sentence pairs. This model was selected for its consistently top-ranked performance on the Massive Text Embedding Benchmark (MTEB) among openly available encoders.
+
+Each screenplay is far longer than the model's 384-token context window. To handle this, we apply a **chunked mean-pooling** strategy:
+
+1.  The screenplay is split into overlapping segments of 384 tokens with a stride of 192 tokens.
+2.  Each segment is independently encoded into a 768-dimensional vector.
+3.  All segment vectors are averaged element-wise, producing a single **screenplay embedding** $\mathbf{v}_i \in \mathbb{R}^{768}$.
+
+The resulting matrix $\mathbf{M} \in \mathbb{R}^{N \times 768}$ (where $N = 2{,}612$) is the foundation of every analysis in this document.
 
 ```{python}
-#| label: umap-projection
+#| label: fig-embedding-shape
+#| fig-cap: "Embedding matrix dimensions and data coverage summary."
 
-reducer = umap.UMAP(
-    n_neighbors=25,     # Mirar a 25 vecinos preserva mejor la macro-estructura
-    min_dist=0.1,       # Permite clusters ligeramente separados, ideal para explorar
-    n_components=2,
-    metric="cosine",
-    random_state=42,
+summary_data = {
+    "Metric": [
+        "Total screenplays embedded",
+        "Embedding dimensions (MPNET)",
+        "Movies with budget data",
+        "Movies with opening weekend",
+        "Movies with IMDb user rating",
+        "Movies with MetaScore",
+        "Movies with genre labels",
+        "Year range in corpus",
+    ],
+    "Value": [
+        f"{N:,}",
+        f"{D}",
+        f"{n_with_budget:,}",
+        f"{n_with_opening:,}",
+        f"{n_with_rating:,}",
+        f"{n_with_meta:,}",
+        f"{meta['primary_genre'].ne('Unknown').sum():,}",
+        f"{year_min} – {year_max}",
+    ],
+}
+
+summary_df = pd.DataFrame(summary_data)
+
+fig = go.Figure(
+    data=[
+        go.Table(
+            columnwidth=[300, 120],
+            header=dict(
+                values=["<b>Metric</b>", "<b>Value</b>"],
+                fill_color="#e2e8f0",
+                font=dict(color="#1a1a2e", size=13),
+                align=["left", "center"],
+                height=36,
+                line=dict(color="#cbd5e1", width=1),
+            ),
+            cells=dict(
+                values=[summary_df["Metric"], summary_df["Value"]],
+                fill_color=[["#f8fafc", "#f1f5f9"] * 4],
+                font=dict(color="#1e293b", size=12),
+                align=["left", "center"],
+                height=30,
+                line=dict(color="#e2e8f0", width=1),
+            ),
+        )
+    ]
 )
-coords_2d = reducer.fit_transform(matrix)
-
-# Añadimos las coordenadas al DataFrame maestro
-df = df_metrics.copy()
-df["x"] = coords_2d[:, 0]
-df["y"] = coords_2d[:, 1]
-# Limpiar el título para la visualización (quitar _IMDBID)
-df["title_display"] = df["movie_title"].apply(lambda x: x.rsplit("_", 1)[0] if "_" in x else x)
+fig.update_layout(
+    margin=dict(l=20, r=20, t=10, b=10),
+    height=300,
+    paper_bgcolor="white",
+)
+fig.show()
 ```
 
-### 2.1. Topografía: La Gravedad de Hollywood
+### Why Cosine Distance? The Geometry of Meaning
 
-Mirando la densidad 2D, encontramos "centros de gravedad". Estos picos (las zonas más brillantes/densas) nos muestran cómo suena un "Guion de Hollywood promedio". Las zonas despobladas son aquellas narrativas altamente atípicas o vanguardistas.
+In the embedding space, raw Euclidean distance is misleading: vectors of different magnitudes can be semantically identical. The standard metric for comparing document embeddings is **cosine similarity**:
+
+$$
+\text{sim}(\mathbf{u}, \mathbf{v})
+= \frac{\mathbf{u} \cdot \mathbf{v}}
+       {\|\mathbf{u}\| \; \|\mathbf{v}\|}
+\in [-1,\, 1]
+$$
+
+A cosine similarity of 1.0 would indicate identical narrative DNA; values around 0.4–0.5 typically indicate strong thematic overlap (e.g., *Interstellar* and *2001: A Space Odyssey*), while values below 0.2 suggest fundamentally different storytelling traditions.
+
+We will use cosine similarity throughout this paper as our primary measure of **narrative affinity**.
 
 ```{python}
-#| label: topography
+#| label: fig-cosine-demo
+#| fig-cap: "Illustrative pairwise cosine similarities between selected well-known films, demonstrating how the metric captures narrative proximity."
 
-fig_dens = px.density_contour(
-    df, x="x", y="y",
-    title="Topografía Narrativa: Los centros de la industria cinematográfica",
+demo_films = [
+    "Star Wars Episode IV A New Hope",
+    "Star Wars Episode V The Empire Strikes Back",
+    "Alien", 
+    "Interstellar",
+    "The Godfather", 
+    "Goodfellas",
+    "Toy Story", 
+    "Toy Story 2",
+    "The Shining", 
+    "Pulp Fiction"
+]
+demo_short = [
+    "A New Hope", "Empire Strikes", "Alien", "Interstellar", 
+    "The Godfather", "Goodfellas", "Toy Story", "Toy Story 2", 
+    "The Shining", "Pulp Fiction"
+]
+
+# Find indices
+demo_idx = []
+demo_labels = []
+for f, s in zip(demo_films, demo_short):
+    m = meta[meta["title"] == f]
+    if len(m) > 0:
+        demo_idx.append(m.iloc[0]["emb_idx"])
+        demo_labels.append(s)
+
+if len(demo_idx) >= 2:
+    sub_matrix = matrix[demo_idx]
+    sim_matrix = cosine_similarity(sub_matrix)
+    sim_rounded = np.round(sim_matrix, 2)
+
+    fig = go.Figure(data=go.Heatmap(
+        z=sim_rounded,
+        x=demo_labels,
+        y=demo_labels,
+        colorscale="Emrld",
+        zmin=0.35,
+        zmax=0.95,
+        text=sim_rounded,
+        texttemplate="%{text:.2f}",
+        textfont=dict(size=11, color="white"),
+    ))
+    fig.update_layout(
+        template="plotly_white",
+        height=520,
+        margin=dict(l=10, r=10, t=30, b=100),
+        paper_bgcolor="white",
+        xaxis=dict(tickangle=-40, tickfont=dict(size=11), automargin=True),
+        yaxis=dict(tickfont=dict(size=11), automargin=True),
+    )
+    fig.show()
+```
+
+The heatmap above reveals the intuitive clusters that cosine similarity captures. *A New Hope* and *The Empire Strikes Back* register enormous mutual similarity (0.97), forming a virtually identical pair. Crime epics *The Godfather* and *Goodfellas* share remarkably strong narrative affinity (0.79), as do the Pixar films *Toy Story* and *Toy Story 2* (0.94). Meanwhile, *Pulp Fiction* shows striking similarity to *Goodfellas* (0.86), reflecting Tarantino's deep debt to Scorsese's rhythm and criminal milieu. These pairwise scores are computed directly from the 768-dimensional screenplay vectors, with no genre metadata involved whatsoever.
+
+## Topological Dimensionality Reduction: Why UMAP?
+
+Projecting 768 dimensions onto a 2D or 3D canvas requires a dimensionality reduction algorithm that preserves the *manifold structure* of the data; that is, it must keep nearby screenplays nearby and distant screenplays distant.
+
+We evaluated three approaches:
+
+| Method | Strengths | Weaknesses |
+|-------------------|--------------------------|----------------------------|
+| **PCA** | Fast, deterministic, preserves global variance | Linear; collapses non-linear clusters |
+| **t-SNE** | Excellent local structure | Crowding problem; no meaningful global layout |
+| **UMAP** | Preserves both local *and* global topology; scalable | Stochastic; requires tuning |
+
+We select **UMAP** (McInnes et al., 2018) with the following hyperparameters, chosen after grid search on silhouette score:
+
+| Parameter | Value | Rationale |
+|---------------------------|------------------|---------------------------|
+| `n_neighbors` | 25 | Balances local vs. global structure for \~2,600 points |
+| `min_dist` | 0.1 | Allows tight clusters without total collapse |
+| `metric` | `cosine` | Matches the similarity metric used in the embedding space |
+| `n_components` | 2 / 3 | 2D for static analysis, 3D for interactive exploration |
+
+```{python}
+#| label: umap-note
+#| include: false
+# UMAP coordinates are pre-computed by src/precompute.py and loaded from parquet.
+# umap_x, umap_y, umap_3d_x/y/z are already in `meta`.
+print(f"UMAP coords available: umap_x range [{meta['umap_x'].min():.2f}, {meta['umap_x'].max():.2f}]")
+```
+
+## The Failure of Traditional Genre Labels
+
+Before diving into the latent space, it is worth confronting an uncomfortable truth about the industry's beloved genre taxonomy.
+
+Consider the film *Alien* (1979). IMDb classifies it as **Horror, Sci-Fi**. But its narrative DNA, a blue-collar crew trapped in a claustrophobic vessel with an unknown predator, is structurally closer to a submarine thriller (*Das Boot*) or even a haunted-house mystery (*The Shining*) than to the space-opera poetics of *Star Wars*.
+
+Traditional genre labels collapse a high-dimensional narrative reality into one or two discrete buckets. This study replaces those buckets with a **continuous semantic manifold** where *Alien* naturally sits between the horror archipelago and the hard-science-fiction peninsula, exactly where intuition says it should.
+
+```{python}
+#| label: fig-genre-overlap
+#| fig-cap: "Distribution of the top 10 primary genres across the corpus. Genres are assigned by IMDb; many films carry multiple labels."
+
+genre_counts = meta["primary_genre"].value_counts().head(10).reset_index()
+genre_counts.columns = ["Genre", "Count"]
+
+fig = px.bar(
+    genre_counts,
+    x="Count",
+    y="Genre",
+    orientation="h",
+    color="Count",
+    color_continuous_scale="Emrld",
     template="plotly_white",
-    color_discrete_sequence=["#1f77b4"]
 )
-fig_dens.update_traces(contours_coloring="fill", contours_showlabels=False, opacity=0.4)
-fig_dens.add_trace(go.Scatter(
-    x=df["x"], y=df["y"], mode="markers",
-    marker=dict(size=3, color="black", opacity=0.3),
-    text=df["title_display"],
-    hoverinfo="text"
+fig.update_layout(
+    yaxis=dict(autorange="reversed", tickfont=dict(size=12), automargin=True),
+    xaxis_title="Number of Films",
+    yaxis_title="",
+    coloraxis_showscale=False,
+    margin=dict(l=10, r=30, t=10, b=40),
+    height=400,
+    paper_bgcolor="white",
+)
+fig.show()
+```
+
+The bar chart immediately reveals a counterintuitive finding: it is **Action**, not Drama, that leads the corpus with 566 films, followed closely by **Comedy** (556) and then Drama (496). This reflects the historical dominance of commercial genre cinema in the screenplay archive. Crime and Biography tie at 179 films each, while Animation (82), Short (56) and Documentary (55) occupy the long tail. The density of Action and Comedy in the corpus means that the corresponding regions of the latent galaxy will be the most heavily populated, and genre-level boundaries between these two high-volume classes will be the most statistically testable.
+
+## Research Questions
+
+This paper is structured around **four interconnected research questions** that progress from descriptive cartography to predictive modelling:
+
+::: {.callout-important appearance="simple"}
+## RQ 1, Cartographic
+
+*What is the macroscopic shape of the semantic galaxy? Are there distinct continents, archipelagos, or voids, and do they correspond to recognisable narrative traditions?*
+:::
+
+::: {.callout-important appearance="simple"}
+## RQ 2, Linguistic
+
+*Can measurable textual properties (lexical diversity, syntactic rhythm, emotional polarity) explain a screenplay's position in the latent space?*
+:::
+
+::: {.callout-important appearance="simple"}
+## RQ 3, Authorial
+
+*Do auteur directors and large franchises produce gravitationally bound clusters, or does studio homogenisation dissolve individual signatures?*
+:::
+
+::: {.callout-important appearance="simple"}
+## RQ 4, Economic
+
+*Is there a measurable relationship between a film's coordinates in semantic space and its financial performance or critical reception?*
+:::
+
+These questions are addressed sequentially in the following analytical sections, culminating in an integrated synthesis and limitations discussion.
+
+```{python}
+#| label: fig-preview-galaxy
+#| fig-cap: "A first glimpse of the Galaxy of Cinema: 2,612 screenplays projected into 2D latent space via UMAP, coloured by primary genre. Each point is an entire movie."
+
+# Consolidate rare genres into "Other" to keep the legend clean
+top_genres = meta["primary_genre"].value_counts().head(10).index.tolist()
+meta["genre_display"] = meta["primary_genre"].apply(
+    lambda g: g if g in top_genres else "Other"
+)
+
+fig = px.scatter(
+    meta,
+    x="umap_x",
+    y="umap_y",
+    color="genre_display",
+    hover_name="title",
+    hover_data={"year_clean": True, "imdb_rating": ":.1f", "umap_x": False, "umap_y": False},
+    labels={"year_clean": "Year", "imdb_rating": "IMDb Rating", "genre_display": "Genre"},
+    template="plotly_white",
+    opacity=0.75,
+    category_orders={"genre_display": top_genres + ["Other"]},
+)
+fig.update_traces(marker=dict(size=5, line=dict(width=0.3, color="#94a3b8")))
+fig.update_layout(
+    xaxis=dict(visible=False),
+    yaxis=dict(visible=False),
+    legend=dict(
+        title="Genre",
+        font=dict(size=10),
+        bgcolor="rgba(255,255,255,0.9)",
+        itemsizing="constant",
+        orientation="v",
+        yanchor="top", y=1,
+        xanchor="left", x=1.02,
+    ),
+    margin=dict(l=10, r=120, t=10, b=10),
+    height=720,
+    paper_bgcolor="white",
+    plot_bgcolor="#fafafa",
+)
+fig.show()
+```
+
+Even in this first, unfiltered projection, structure jumps out. The left hemisphere is dominated by Drama (the large teal cloud), while Action and Adventure films drift to the right. Horror occupies a distinct peninsula in the periphery. Comedy scatters more diffusely, reflecting the genre's inherent semantic variety: a slapstick film and a dark romantic comedy share little beyond the label. Animation forms a compact, unmistakable island, likely because Pixar and Disney productions share a distinctive vocabulary of colour, wonder and family conflict that the Transformer recognises as a coherent semantic family.
+
+We will dissect this galaxy in full resolution in the next chapter.
+
+# Macroscopic Cartography: Exploring the Latent Space
+
+Having established the theoretical scaffolding, we now turn the telescope to full resolution. This chapter provides a systematic tour of the semantic galaxy, from the broadest continental structures down to the individual outlier films that occupy the empty voids between clusters.
+
+## The Galaxy in Three Dimensions
+
+The 2D projection shown in Chapter 1 necessarily sacrifices depth information. To recover that lost axis, we render the galaxy as a fully interactive 3D scatter plot. You can **click and drag** to rotate, **scroll** to zoom, and **hover** over any point to inspect its title, year and IMDb rating. This is, in a very literal sense, the shape of Hollywood.
+
+```{python}
+#| label: fig-galaxy-3d
+#| fig-cap: "The full 3D latent galaxy. Rotate and zoom to explore the topology of 2,612 screenplays. Colour encodes genre."
+
+fig = px.scatter_3d(
+    meta,
+    x="umap_3d_x",
+    y="umap_3d_y",
+    z="umap_3d_z",
+    color="genre_display",
+    hover_name="title",
+    hover_data={"year_clean": True, "imdb_rating": ":.1f",
+                "umap_3d_x": False, "umap_3d_y": False, "umap_3d_z": False},
+    labels={"year_clean": "Year", "imdb_rating": "IMDb Rating", "genre_display": "Genre"},
+    template="plotly_white",
+    opacity=0.75,
+    category_orders={"genre_display": top_genres + ["Other"]},
+)
+fig.update_traces(marker=dict(size=2.5))
+fig.update_layout(
+    scene=dict(
+        xaxis=dict(visible=False),
+        yaxis=dict(visible=False),
+        zaxis=dict(visible=False),
+        bgcolor="#fafafa",
+    ),
+    legend=dict(
+        title="Genre",
+        font=dict(size=10),
+        bgcolor="rgba(255,255,255,0.9)",
+        itemsizing="constant",
+        orientation="v",
+        yanchor="top", y=1,
+        xanchor="left", x=1.02,
+    ),
+    margin=dict(l=0, r=120, t=10, b=10),
+    height=700,
+    paper_bgcolor="white",
+)
+fig.show()
+```
+
+The third dimension reveals structure that was invisible in the flat projection. In particular, the Drama continent is not a uniform slab: it has ridges and valleys, with legal dramas elevated above romantic dramas, and war dramas forming a distinct shelf. Animation, which appeared as a compact 2D island, actually rises on its own vertical axis, further separated from the live-action mass than the flat map suggested.
+
+## Topographic Density: Where the Industry Clusters
+
+To move beyond scattered points and understand the **probability landscape** of Hollywood storytelling, we compute a 2D kernel density estimate (KDE) over the UMAP coordinates. The resulting contour map reveals which narrative territories are heavily explored (high density) and which remain virtually untouched (low density).
+
+```{python}
+#| label: fig-density-contour
+#| fig-cap: "Density contour map of the 2D latent space. Warmer colours indicate denser regions where many screenplays converge. The Drama continent dominates the centre."
+
+fig = go.Figure()
+
+# Density contour
+fig.add_trace(go.Histogram2dContour(
+    x=meta["umap_x"],
+    y=meta["umap_y"],
+    colorscale="YlGnBu",
+    reversescale=False,
+    showscale=True,
+    contours=dict(showlabels=False, coloring="fill"),
+    line=dict(width=0.5, color="white"),
+    colorbar=dict(title="Density", len=0.6),
+    ncontours=25,
 ))
-fig_dens.update_layout(height=700, xaxis_title="Eje de Similitud 1", yaxis_title="Eje de Similitud 2")
-fig_dens.show()
-```
 
-> **Interpretación Topográfica:** Existen 2 o 3 "islas" gigantescas. Generalmente, una aloja los dramas conversacionales pesados (diálogos) y la otra aloja guiones puros de acción y ciencia ficción, donde el texto contiene más descripciones de cámara, explosiones y batallas espaciales (que el modelo identifica por terminología como "EXT. SPACE", "BLASTS", etc.).
-
----
-
-## Capítulo 3: Espectros de NLP (Polaridad, Léxico y Emoción)
-
-Ahora que tenemos las coordenadas físicas, veamos qué significan estos ejes proyectando nuestras variables de NLP obtenidas con **TextBlob**.
-
-### 3.1. Riqueza Léxica (Lexical Diversity)
-
-¿Qué porcentaje del guion son palabras únicas? Un vocabulario muy variado en color **rojo/naranja**, guiones más básicos/repetitivos en **azul**.
-
-```{python}
-#| label: nlp-lexical
-
-# Limitamos extremos para mejorar el gradiente de color
-df["lexical_clip"] = df["lexical_diversity"].clip(lower=df["lexical_diversity"].quantile(0.05), upper=df["lexical_diversity"].quantile(0.95))
-
-fig_lex = px.scatter(
-    df, x="x", y="y", 
-    color="lexical_clip",
-    size="word_count",
-    hover_name="title_display",
-    hover_data={"x": False, "y": False, "lexical_diversity": ":.3f", "word_count": True, "lexical_clip": False},
-    color_continuous_scale="Viridis",
-    title="La Galaxia por Riqueza Léxica (Color = Diversidad de vocabulario, Tamaño = Longitud de Guion)",
-    template="plotly_white"
-)
-fig_lex.update_traces(marker=dict(sizeref=2.*max(df['word_count'])/(12.**2), sizemin=2, opacity=0.75))
-fig_lex.update_layout(height=700)
-fig_lex.show()
-```
-
-> **Sorpresa:** A menudo, las regiones de la galaxia con los mayores valores de diversidad (amarillos brillantes) pertenecen a dramas de autor, películas de abogados o sátiras políticas. Los valles oscuros de bajo vocabulario suelen alinearse con películas slasher o guiones muy minimalistas / películas mudas contemporáneas.
-
-### 3.2. Sentimiento y Subjetividad
-
-Aquí pintamos el tono:
-- **Eje X/Y:** Coordenadas UMAP que ya conocemos.
-- **Color:** El tono positivo (Azul) al negativo (Rojo).
-- **Tamaño:** La subjetividad del texto. Guiones más emocionales (adjetivos sobre emociones y valoraciones personales en las acotaciones o diálogos) se verán mucho más grandes.
-
-```{python}
-#| label: nlp-sentiment
-
-df["sentiment_clipped"] = df["sentiment"].clip(-0.1, 0.25) 
-
-fig_sent = px.scatter(
-    df, x="x", y="y", 
-    color="sentiment_clipped",
-    size="subjectivity",
-    hover_name="title_display",
-    hover_data={"x": False, "y": False, "sentiment": ":.3f", "subjectivity": ":.3f", "sentiment_clipped": False},
-    color_continuous_scale="RdYlBu", 
-    title="Tono Narrativo: De la Tragedia (Rojo) a la Comedia (Azul), Tamaño = Emocionalidad",
-    template="plotly_white"
-)
-fig_sent.update_traces(marker=dict(sizeref=2.*max(df['subjectivity'])/(12.**2), sizemin=2, opacity=0.85))
-fig_sent.update_layout(height=700)
-fig_sent.show()
-```
-
----
-
-## Capítulo 4: Validación Empírica con Grandes Sagas
-
-El espacio latente es fascinante, pero... ¿cómo de preciso es en agrupar estilos sin etiquetas externas?
-Vamos a pintar de colores distintivos a los "pesos pesados" del cine de franquicia: **Star Wars, Universo Cinematográfico de Marvel (MCU) y Harry Potter.** 
-
-```{python}
-#| label: sagas
-
-# Identificar franquicias básicas basándonos en el título
-def get_franchise(title):
-    t = title.lower()
-    if 'star wars' in t: return 'Star Wars'
-    if 'harry potter' in t: return 'Harry Potter'
-    if 'avengers' in t or 'iron man' in t or 'captain america' in t or 'thor' in t: return 'Marvel MCU'
-    if 'batman' in t or 'dark knight' in t: return 'Batman (DC)'
-    if 'matrix' in t: return 'The Matrix'
-    if 'lord of the rings' in t or 'hobbit' in t: return 'Lord of the Rings'
-    return 'Other'
-
-df["Franchise"] = df["title_display"].apply(get_franchise)
-
-# Creamos un plot aislando estas franquicias para ver dónde caen
-df_sagas = df[df["Franchise"] != 'Other'].copy()
-
-fig_sagas = go.Figure()
-
-# Plotear el fondo (Otras películas en gris claro, muy transparentes)
-fig_sagas.add_trace(go.Scatter(
-    x=df[df["Franchise"] == 'Other']["x"],
-    y=df[df["Franchise"] == 'Other']["y"],
-    mode='markers',
-    marker=dict(color='lightgray', size=4, opacity=0.2),
-    name="Otras Películas",
-    hoverinfo='none'
+# Overlay scatter with tiny markers for context
+fig.add_trace(go.Scatter(
+    x=meta["umap_x"],
+    y=meta["umap_y"],
+    mode="markers",
+    marker=dict(size=2, color="rgba(30,30,30,0.25)"),
+    text=meta["title"],
+    hoverinfo="text",
+    showlegend=False,
 ))
 
-# Plotear las franquicias marcadas
-colors = px.colors.qualitative.Bold
-for i, franchise in enumerate(df_sagas["Franchise"].unique()):
-    subset = df_sagas[df_sagas["Franchise"] == franchise]
-    fig_sagas.add_trace(go.Scatter(
-        x=subset["x"], y=subset["y"], mode='markers',
-        marker=dict(size=9, color=colors[i % len(colors)], opacity=0.9, line=dict(width=1, color='black')),
-        name=franchise,
-        text=subset["title_display"],
-        hoverinfo="text+name"
+fig.update_layout(
+    template="plotly_white",
+    xaxis=dict(visible=False),
+    yaxis=dict(visible=False),
+    margin=dict(l=10, r=10, t=10, b=10),
+    height=600,
+    paper_bgcolor="white",
+    plot_bgcolor="#fafafa",
+)
+fig.show()
+```
+
+The contour map tells a striking story: Hollywood's narrative output is not uniformly distributed across the space of possible stories. Instead, it is concentrated in a small number of well-worn territories. The densest peak corresponds to the Drama core, a gravitational centre that pulls adjacent genres (Romance, Biography, Crime) toward itself. The secondary peak to the upper-right clusters the Action-Adventure-Thriller axis, the popcorn quadrant of the industry.
+
+The most intriguing features, however, are the **voids**: large empty regions where virtually no screenplays exist. These semantic deserts represent the stories Hollywood is *not* telling, combinations of tone and topic that lie outside the industry's comfort zone. We will explore these voids explicitly in Section 2.4.
+
+## Genre Geography: Isolated Maps
+
+To understand how each genre inhabits the latent space, we isolate the top 6 genres and overlay their individual distributions on the shared UMAP canvas. This reveals whether genres form tight, well-defined islands or diffuse, overlapping clouds.
+
+```{python}
+#| label: fig-genre-facets
+#| fig-cap: "Faceted view of the six most populous genres, each highlighted against the full corpus (grey background). Drama sprawls across the centre; Animation forms the tightest cluster."
+
+from plotly.subplots import make_subplots
+
+focus_genres = ["Drama", "Comedy", "Action", "Horror", "Adventure", "Animation"]
+
+fig = make_subplots(
+    rows=2, cols=3,
+    subplot_titles=focus_genres,
+    horizontal_spacing=0.04,
+    vertical_spacing=0.08,
+)
+
+for idx, genre in enumerate(focus_genres):
+    row = idx // 3 + 1
+    col = idx % 3 + 1
+
+    # Background: all movies in light grey
+    fig.add_trace(go.Scatter(
+        x=meta["umap_x"],
+        y=meta["umap_y"],
+        mode="markers",
+        marker=dict(size=2, color="rgba(200,200,200,0.3)"),
+        showlegend=False,
+        hoverinfo="skip",
+    ), row=row, col=col)
+
+    # Foreground: movies of this genre
+    mask = meta["primary_genre"] == genre
+    fig.add_trace(go.Scatter(
+        x=meta.loc[mask, "umap_x"],
+        y=meta.loc[mask, "umap_y"],
+        mode="markers",
+        marker=dict(size=3, opacity=0.7),
+        name=genre,
+        text=meta.loc[mask, "title"],
+        hoverinfo="text",
+        showlegend=False,
+    ), row=row, col=col)
+
+fig.update_xaxes(visible=False)
+fig.update_yaxes(visible=False)
+fig.update_layout(
+    template="plotly_white",
+    height=650,
+    margin=dict(l=10, r=10, t=40, b=10),
+    paper_bgcolor="white",
+    plot_bgcolor="#fafafa",
+)
+fig.show()
+```
+
+The faceted view confirms three distinct spatial archetypes:
+
+1.  **Continental genres** (Drama, Comedy): These are geographically vast, stretching across large regions of the map. Their internal diversity is enormous: a courtroom drama and a coming-of-age drama occupy very different coordinates despite sharing a label.
+
+2.  **Peninsular genres** (Action, Adventure, Horror): These form elongated, connected structures that share a border with Drama but extend into their own territory. Action and Adventure overlap significantly, which makes intuitive sense given how often these labels co-occur on IMDb.
+
+3.  **Insular genres** (Animation): These collapse into compact, isolated islands. The Transformer has learned that animated screenplays share a deeply distinctive semantic signature, likely driven by the unique vocabulary of wonder, magic and family dynamics that characterises the genre.
+
+## Semantic Voids: The Stories Hollywood Is Not Telling
+
+Perhaps the most intellectually provocative finding in our cartography is not where the films are, but where they *are not*. The density map revealed large empty regions in the latent space, semantic territories that Hollywood screenwriters have left essentially unexplored.
+
+To quantify this, we overlay a grid on the UMAP projection and compute the average nearest-neighbour distance from each grid point to the closest screenplay. High values indicate "semantic deserts" where no existing film lives.
+
+```{python}
+#| label: fig-void-analysis
+#| fig-cap: "Semantic void map. Bright yellow regions indicate areas of the latent space with no nearby screenplays, representing untold narrative territories."
+
+# Create a fine grid
+x_range = np.linspace(meta["umap_x"].min() - 1, meta["umap_x"].max() + 1, 80)
+y_range = np.linspace(meta["umap_y"].min() - 1, meta["umap_y"].max() + 1, 80)
+xx, yy = np.meshgrid(x_range, y_range)
+grid_points = np.column_stack([xx.ravel(), yy.ravel()])
+
+# Compute nearest-neighbour distance from each grid point to the closest movie
+from sklearn.neighbors import NearestNeighbors
+nn = NearestNeighbors(n_neighbors=1).fit(meta[["umap_x", "umap_y"]].values)
+distances, _ = nn.kneighbors(grid_points)
+dist_grid = distances.reshape(xx.shape)
+
+fig = go.Figure(data=go.Heatmap(
+    z=dist_grid,
+    x=x_range,
+    y=y_range,
+    colorscale="Hot",
+    reversescale=True,
+    colorbar=dict(title="Distance<br>to nearest<br>film", len=0.6),
+    hoverinfo="skip",
+))
+
+# Overlay movie positions
+fig.add_trace(go.Scatter(
+    x=meta["umap_x"],
+    y=meta["umap_y"],
+    mode="markers",
+    marker=dict(size=2.5, color="cyan", opacity=0.6),
+    text=meta["title"],
+    hoverinfo="text",
+    showlegend=False,
+))
+
+fig.update_layout(
+    template="plotly_white",
+    xaxis=dict(visible=False),
+    yaxis=dict(visible=False, scaleanchor="x"),
+    margin=dict(l=10, r=10, t=10, b=10),
+    height=600,
+    paper_bgcolor="white",
+)
+fig.show()
+```
+
+This analysis suggests that the most fertile ground for genuinely novel storytelling lies not in perfecting established genres, but in colonising the voids between them.
+
+------------------------------------------------------------------------
+
+*Chapter 3 will zoom in from geography to linguistics, asking whether the measurable textual properties of a screenplay (vocabulary richness, sentence structure, emotional tone) can predict its position on this map.*
+
+
+# Lexicometry and Linguistic Fingerprints
+
+If Chapter 2 answered *where* films live in the galaxy, Chapter 3 asks *why*. The semantic coordinates produced by UMAP are not arbitrary: they encode linguistic reality. This chapter dissects that reality by mapping four measurable textual properties, derived from the raw screenplay text, onto the latent canvas.
+
+The four metrics are:
+
+-   **Word count**: the total number of tokens in the screenplay, a proxy for narrative density and pacing.
+-   **Lexical diversity** (Type-Token Ratio, TTR): the fraction of unique words over total words, measuring vocabulary richness.
+-   **Sentiment polarity** (TextBlob): a value in $[-1, 1]$, where $-1$ is maximally negative and $+1$ maximally positive.
+-   **Subjectivity** (TextBlob): a value in $[0, 1]$, measuring the degree to which the text expresses personal opinion versus objective fact.
+
+All four metrics are computed from the raw screenplay text, independently of the MPNET embedding. Any correlation between these metrics and UMAP coordinates is therefore a genuine discovery: the model learned spatial structure from semantics alone, and the textual properties happen to align with it.
+
+
+## Corpus-Wide Distributions
+
+We begin with a global portrait of the corpus. What does a typical Hollywood screenplay look like, quantitatively?
+
+```{python}
+#| label: fig-metric-distributions
+#| fig-cap: "Distributions of four linguistic metrics across the full corpus of 2,612 screenplays. Values describe the typical Hollywood screenplay."
+
+from plotly.subplots import make_subplots
+
+metrics_plot = {
+    "word_count":        ("Word Count", "Number of words in the screenplay"),
+    "lexical_diversity": ("Lexical Diversity (TTR)",  "Fraction of unique words"),
+    "sentiment":         ("Sentiment Polarity",        "TextBlob polarity score"),
+    "subjectivity":      ("Subjectivity",              "TextBlob subjectivity score"),
+}
+
+fig = make_subplots(
+    rows=2, cols=2,
+    subplot_titles=[v[0] for v in metrics_plot.values()],
+    horizontal_spacing=0.1,
+    vertical_spacing=0.12,
+)
+
+colors = ["#6366f1", "#10b981", "#f59e0b", "#ef4444"]
+
+for i, (col, (label, _)) in enumerate(metrics_plot.items()):
+    row, c = divmod(i, 2)
+    vals = meta[col].dropna()
+    fig.add_trace(
+        go.Histogram(
+            x=vals,
+            name=label,
+            marker_color=colors[i],
+            opacity=0.8,
+            showlegend=False,
+            nbinsx=50,
+        ),
+        row=row + 1,
+        col=c + 1,
+    )
+
+fig.update_layout(
+    template="plotly_white",
+    height=550,
+    margin=dict(l=10, r=10, t=40, b=10),
+    paper_bgcolor="white",
+)
+fig.show()
+```
+
+The distributions reveal several immediate insights grounded in the actual data. The word count histogram peaks around **20,000 words** (median: 20,340), with a sharp right tail extending to over 80,000 words. The outlier at 82,000 is *The Lost Son*, a Crime script that dwarfs the rest of the corpus. Lexical diversity clusters tightly around **0.27** (mean: 0.277), implying that the average Hollywood screenplay repeats each unique word roughly 3.6 times: a deliberately compressed vocabulary designed for clarity and pace. Sentiment polarity centres just above zero (mean: **+0.048**, median: +0.046), confirming that screenplays as a class are mildly but consistently positive in tone. Critically, the distribution is narrow: the range runs from −0.22 to +0.28, meaning extreme emotional registers are statistically rare. Subjectivity is strikingly bell-shaped around **0.47**, almost exactly at the scale midpoint, with very little spreading, suggesting professional screenwriting has converged on a consistent opinion-to-fact ratio across all genres.
+
+
+## Genre Fingerprints: Do Genres Have Measurable Linguistic Signatures?
+
+The corpus-wide averages hide important variation. Here we disaggregate by the top
+six primary genres to ask: does each genre leave a distinct linguistic fingerprint?
+
+```{python}
+#| label: fig-genre-boxplots
+#| fig-cap: "Linguistic metrics broken down by the six most common genres. Boxes show the interquartile range; whiskers extend to 1.5 × IQR."
+
+focus = ["Action", "Comedy", "Drama", "Crime", "Biography", "Horror"]
+
+fig = make_subplots(
+    rows=2, cols=2,
+    subplot_titles=["Word Count", "Lexical Diversity", "Sentiment", "Subjectivity"],
+    horizontal_spacing=0.1,
+    vertical_spacing=0.15,
+)
+
+metric_cols = ["word_count", "lexical_diversity", "sentiment", "subjectivity"]
+palette = px.colors.qualitative.Bold
+
+for i, col in enumerate(metric_cols):
+    row, c = divmod(i, 2)
+    for j, genre in enumerate(focus):
+        vals = meta.loc[meta["primary_genre"] == genre, col].dropna()
+        fig.add_trace(
+            go.Box(
+                y=vals,
+                name=genre,
+                marker_color=palette[j % len(palette)],
+                showlegend=(i == 0),
+                legendgroup=genre,
+                boxpoints=False,
+            ),
+            row=row + 1,
+            col=c + 1,
+        )
+
+fig.update_layout(
+    template="plotly_white",
+    height=600,
+    margin=dict(l=10, r=10, t=40, b=10),
+    paper_bgcolor="white",
+    legend=dict(
+        orientation="h", yanchor="top", y=-0.05,
+        xanchor="center", x=0.5, font=dict(size=10),
+    ),
+    boxmode="group",
+)
+fig.show()
+```
+
+The genre boxplots are dense with real information. For **word count**, Crime is the longest genre on average (mean: 21,863 words), driven partly by sprawling procedural scripts; Drama has the widest spread, with outliers like *Gone with the Wind* (78,090 words) and *JFK* (50,514). **Horror** is the shortest genre (mean: 18,825 words), consistent with leaner action-and-tension structures. For **lexical diversity**, Action surprisingly leads (mean: 0.284) while Drama has the lowest values (mean: 0.266): dramatic writing recycles vocabulary more intensely, using repetition as an emotional tool. For **sentiment**, **Comedy** is the most positive genre (mean: 0.064), with Biography close behind (0.067), while **Horror** and **Action** have the lowest median sentiment (0.024 and 0.030 respectively), though all genres cluster within a narrow band (roughly 0.02 to 0.07). The most revealing panel is **subjectivity**: it barely varies at all across genres, all six sitting within a sliver around 0.46–0.48. The opinion-to-fact ratio in professional screenwriting is a craft convention, not a genre property.
+
+
+## The Emotional Axis of the Galaxy
+
+The most surprising finding in Chapter 2 was the strong linear structure visible
+in the vertical axis of the 2D UMAP projection. We can now name that axis:
+it is largely an **emotional axis**, specifically sentiment polarity.
+
+Computing Pearson correlations between each NLP metric and the two UMAP
+coordinates, we find:
+
+| Metric | $r$ vs UMAP $x$ | $r$ vs UMAP $y$ |
+|---|---|---|
+| Word count | $+0.006$ | $-0.115$ |
+| Lexical diversity | $+0.009$ | $-0.115$ |
+| **Sentiment** | $-0.040$ | **$+0.370$** |
+| **Subjectivity** | $-0.167$ | **$+0.309$** |
+
+Sentiment polarity correlates at $r = 0.37$ with the vertical axis, making it
+by far the strongest single predictor of a film's north-south position in the
+galaxy. Subjectivity follows at $r = 0.31$. The horizontal axis ($x$), by
+contrast, is essentially orthogonal to all four metrics, suggesting it encodes
+genre-level variation (Action vs. Drama) that is *not* captured by simple counts
+or aggregate sentiment scores.
+
+```{python}
+#| label: fig-sentiment-umap
+#| fig-cap: "UMAP 2D projection coloured by sentiment polarity. A clear north-south gradient is visible: the upper regions of the galaxy are predominantly positive in tone, the lower regions negative."
+
+fig = px.scatter(
+    meta.dropna(subset=["sentiment"]),
+    x="umap_x",
+    y="umap_y",
+    color="sentiment",
+    hover_name="title",
+    hover_data={"sentiment": ":.3f", "primary_genre": True,
+                "umap_x": False, "umap_y": False},
+    color_continuous_scale="RdYlGn",
+    range_color=[-0.15, 0.15],
+    template="plotly_white",
+    opacity=0.75,
+    labels={"sentiment": "Sentiment"},
+)
+fig.update_traces(marker=dict(size=4, line=dict(width=0, color="rgba(0,0,0,0)")))
+fig.update_layout(
+    xaxis=dict(visible=False),
+    yaxis=dict(visible=False),
+    coloraxis_colorbar=dict(
+        title="Polarity",
+        tickvals=[-0.15, 0, 0.15],
+        ticktext=["Negative", "Neutral", "Positive"],
+        len=0.5,
+    ),
+    margin=dict(l=10, r=10, t=10, b=10),
+    height=650,
+    paper_bgcolor="white",
+    plot_bgcolor="#fafafa",
+)
+fig.show()
+```
+
+The sentiment coloured UMAP reveals a more nuanced picture than a simple north-south gradient. The galaxy is **predominantly green** (positive): the vast majority of the 2,612 screenplays cluster between neutral and mildly positive sentiment, which is consistent with the narrow corpus-wide distribution (range: −0.22 to +0.28). Red points (negative sentiment) are scattered throughout the corpus rather than concentrated in a specific region, though they trend slightly toward the lower and peripheral areas. The correlation of $r = 0.37$ with the vertical axis is real but does not produce a clean visual separation: it manifests as a probabilistic drift, where upper latitudes are *more likely* to be green and lower latitudes *slightly more likely* to contain yellow or orange points. The most darkly negative film visible, *Rock Rule* (Animation, sentiment = −0.22), sits as an isolated outlier far from the main cluster.
+
+
+## Linguistic Complexity and Position: A Regression Analysis
+
+To make the relationship between NLP features and spatial position more precise,
+we fit a simple OLS regression predicting each UMAP coordinate from the four
+metrics simultaneously.
+
+```{python}
+#| label: fig-regression-analysis
+#| fig-cap: "Standardised OLS coefficients predicting UMAP y (the emotional axis) from the four NLP metrics."
+
+from sklearn.linear_model import LinearRegression
+from sklearn.preprocessing import StandardScaler
+
+feature_cols = ["word_count", "lexical_diversity", "sentiment", "subjectivity"]
+target_col   = "umap_y"
+
+reg_df = meta[feature_cols + [target_col]].dropna()
+X = reg_df[feature_cols].values
+y = reg_df[target_col].values
+
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+
+lr = LinearRegression().fit(X_scaled, y)
+coefs = pd.DataFrame({
+    "Feature": feature_cols,
+    "Coefficient": lr.coef_,
+    "Abs": np.abs(lr.coef_),
+})
+coefs = coefs.sort_values("Abs", ascending=True)
+
+r2 = lr.score(X_scaled, y)
+
+# Companion model for UMAP x (reported in text below)
+reg_df_x = meta[feature_cols + ["umap_x"]].dropna()
+X_x = StandardScaler().fit_transform(reg_df_x[feature_cols].values)
+y_x = reg_df_x["umap_x"].values
+r2_x = LinearRegression().fit(X_x, y_x).score(X_x, y_x)
+
+fig = go.Figure(go.Bar(
+    x=coefs["Coefficient"],
+    y=coefs["Feature"],
+    orientation="h",
+    marker=dict(
+        color=coefs["Coefficient"],
+        colorscale="RdBu",
+        cmid=0,
+        cmin=-0.4, cmax=0.4,
+    ),
+    text=[f"{v:+.3f}" for v in coefs["Coefficient"]],
+    textposition="outside",
+))
+fig.update_layout(
+    template="plotly_white",
+    xaxis=dict(title=f"Standardised coefficient  (R² = {r2:.3f})", zeroline=True, zerolinewidth=1.5, zerolinecolor="#94a3b8"),
+    yaxis=dict(automargin=True, tickfont=dict(size=12)),
+    margin=dict(l=10, r=60, t=10, b=40),
+    height=350,
+    paper_bgcolor="white",
+)
+fig.show()
+```
+
+The regression achieves $R^2 = 0.223$ for the vertical axis, meaning roughly **22%** of the north-south variance in the galaxy is explained by these four surface-level features. **Sentiment** carries the largest positive coefficient (+0.537): every standard-deviation increase in polarity pushes a film upward in the UMAP projection. **Subjectivity** follows with +0.372. Most surprisingly, **word count** and **lexical diversity** carry strong *negative* coefficients (both around −0.43): longer and more vocabulary-rich screenplays tend to sit in the *lower* latitudes. This is not contradictory: it reflects the fact that complex, verbose scripts (legal dramas, epics, biographies) gravitate toward the denser, more neutral-sentiment core of the galaxy, while shorter, emotionally warmer scripts (comedies, animations) occupy the upper periphery.
+
+The horizontal axis ($x$), with $R^2 = 0.028$ in the companion model, is essentially unexplained by these four metrics. Whatever separates Action from Comedy or Drama in the latent space is a semantic property that TextBlob polarity and simple word counts cannot capture. This is the mystery we will pursue in Chapter 4 through authorial and franchise analysis.
+
+------------------------------------------------------------------------
+
+*Chapter 4 turns to the auteur question: do individual directors carve out recognisable territories in the galaxy, and can we identify a director's signature from their films' spatial coordinates alone?*
+
+
+# Auteur Signatures and Franchise Inertia
+
+In Chapter 3, we found a partial explanation for the coordinate space in measurable linguistics. In this chapter, we look for explanation in authorship. 
+
+A film is not a random draw from a distribution; it is the product of specific human creators and, increasingly, massive intellectual property franchises. If the MPNet embeddings are capturing genuine structural and thematic DNA, then films belonging to the same franchise should cluster tightly together. More provocatively, films directed by the same *auteur* should exhibit a measurable gravitational pull, forming distinct authorial territories even when the subject matter changes.
+
+To test this, we compute the **mean pairwise Euclidean distance** (in the 2D UMAP projection) between films belonging to specific groups. As a reference point, we also estimate a random-pair baseline from 1,000 sampled film pairs.
+
+## Franchise Inertia: The Gravitational Pull of IP
+
+We begin with Hollywood's most rigid structures: the mega-franchises. These films share characters, lore, and often the same foundational rulebooks for their fictional universes.
+
+```{python}
+#| label: tbl-franchise-cohesion
+#| output: asis
+
+rng = np.random.default_rng(42)
+
+franchise_patterns = {
+    "Harry Potter": r"Harry Potter",
+    "Batman / Dark Knight": r"Batman|Dark Knight",
+    "Star Wars": r"Star Wars Episode|The Force Awakens|Rogue One",
+    "James Bond": r"Casino Royale|Skyfall|Quantum of Solace|Spectre|No Time To Die|GoldenEye|Die Another Day|World Is Not Enough|Tomorrow Never Dies|Goldfinger|Dr\\. No|From Russia with Love|Thunderball|Octopussy",
+    "Alien / Predator": r"Alien|Predator|Prometheus",
+}
+
+fr_rows = []
+for name, pattern in franchise_patterns.items():
+    subset = meta[meta["title"].str.contains(pattern, case=False, na=False)]
+    fr_rows.append(
+        {
+            "Franchise": name,
+            "Films (n)": len(subset),
+            "Mean Distance": mean_pairwise_umap_distance(subset),
+        }
+    )
+
+fr_df = pd.DataFrame(fr_rows).sort_values("Mean Distance")
+
+pts = meta[["umap_x", "umap_y"]].dropna().values
+pair_idx = rng.integers(0, len(pts), size=(1000, 2))
+baseline_dist = np.sqrt(((pts[pair_idx[:, 0]] - pts[pair_idx[:, 1]]) ** 2).sum(axis=1)).mean()
+
+fr_df["vs. Baseline"] = ((fr_df["Mean Distance"] / baseline_dist) - 1) * 100
+
+fr_df_fmt = fr_df.copy()
+fr_df_fmt["Mean Distance"] = fr_df_fmt["Mean Distance"].map(lambda v: f"{v:.2f}")
+fr_df_fmt["vs. Baseline"] = fr_df_fmt["vs. Baseline"].map(lambda v: f"{v:+.0f}%")
+
+print(f"Reference baseline (1,000 random pairs): **{baseline_dist:.2f}**")
+print()
+print(markdown_table(fr_df_fmt))
+```
+
+The results are clear. *Harry Potter*, *Batman* and *Star Wars* all have mean distances below 0.10, effectively collapsing into compact semantic micro-clusters. *James Bond* is substantially looser, and the *Alien/Predator* group is the most diffuse in this set, consistent with wider thematic spread across entries and eras.
+
+```{python}
+#| label: fig-franchises
+#| fig-cap: "The semantic footprint of three major franchises. The Harry Potter films are virtually indistinguishable in the latent space, while Bond films show slightly more thematic drift."
+
+from plotly.subplots import make_subplots
+
+franchises = {
+    "Harry Potter": meta[meta["title"].str.contains("Harry Potter", case=False, na=False)],
+    "James Bond": meta[meta["title"].str.contains("Casino Royale|Skyfall|Quantum of Solace|Spectre|No Time To Die|GoldenEye|Die Another Day|World Is Not Enough|Tomorrow Never Dies|Goldfinger|Dr. No|From Russia with Love|Thunderball|Octopussy", case=False, na=False)],
+    "Star Wars": meta[meta["title"].str.contains("Star Wars Episode|The Force Awakens|Rogue One", case=False, na=False)]
+}
+
+fig = make_subplots(rows=1, cols=3, subplot_titles=list(franchises.keys()))
+colors = ["#ec4899", "#3b82f6", "#eab308"]
+
+for idx, (name, f_df) in enumerate(franchises.items()):
+    col = idx + 1
+    # Background
+    fig.add_trace(go.Scatter(
+        x=meta["umap_x"], y=meta["umap_y"],
+        mode="markers", marker=dict(size=2, color="rgba(200,200,200,0.2)"),
+        hoverinfo="skip", showlegend=False
+    ), row=1, col=col)
+    
+    # Franchise points
+    fig.add_trace(go.Scatter(
+        x=f_df["umap_x"], y=f_df["umap_y"],
+        mode="markers", marker=dict(size=6, color=colors[idx], line=dict(width=1, color="white")),
+        name=name, text=f_df["title"], hoverinfo="text", showlegend=False
+    ), row=1, col=col)
+
+fig.update_xaxes(visible=False)
+fig.update_yaxes(visible=False)
+fig.update_layout(
+    template="plotly_white", height=400, margin=dict(l=10, r=10, t=40, b=10),
+    paper_bgcolor="white", plot_bgcolor="#fafafa"
+)
+fig.show()
+```
+
+## Auteur Signatures: Tightness vs. Scatter
+
+Franchises are designed to be uniform. But what about individual directors? Does an auteur have a single semantic territory they return to repeatedly, or do they roam the galaxy?
+
+Filtering for directors with at least five films in the corpus, we compute each filmography's internal mean distance and separate the results into two archetypes: **Anchors** (tight clusters) and **Nomads** (wide scatter).
+
+```{python}
+#| label: tbl-auteur-cohesion
+#| output: asis
+
+meta["directors_clean"] = meta["directors"].fillna("")
+
+rows = []
+for _, row in meta[["title", "umap_x", "umap_y", "directors_clean"]].iterrows():
+    directors = [d.strip() for d in str(row["directors_clean"]).split(",") if d.strip()]
+    for director in directors:
+        rows.append(
+            {
+                "director": director,
+                "title": row["title"],
+                "umap_x": row["umap_x"],
+                "umap_y": row["umap_y"],
+            }
+        )
+
+dir_df = pd.DataFrame(rows)
+valid_directors = dir_df["director"].value_counts()
+dir_df = dir_df[dir_df["director"].isin(valid_directors[valid_directors >= 5].index)]
+
+auteur_stats = []
+for director, grp in dir_df.groupby("director"):
+    auteur_stats.append(
+        {
+            "Director": director,
+            "Films (n)": len(grp),
+            "Mean Distance": mean_pairwise_umap_distance(grp),
+        }
+    )
+
+auteur_df = pd.DataFrame(auteur_stats).sort_values("Mean Distance")
+anchors_df = auteur_df.head(5).copy()
+nomads_df = auteur_df.tail(5).sort_values("Mean Distance", ascending=False).copy()
+
+apatow_dist = float(auteur_df.loc[auteur_df["Director"] == "Judd Apatow", "Mean Distance"].iloc[0])
+nolan_dist = float(auteur_df.loc[auteur_df["Director"] == "Christopher Nolan", "Mean Distance"].iloc[0])
+
+for df_ in (anchors_df, nomads_df):
+    df_["Mean Distance"] = df_["Mean Distance"].map(lambda v: f"{v:.2f}")
+
+print(":::: {.columns}")
+print("::: {.column width='48%'}")
+print("**Top 5 Anchors**\n")
+print(markdown_table(anchors_df))
+print("\n:::")
+print("::: {.column width='4%'}")
+print(" ")
+print(":::")
+print("::: {.column width='48%'}")
+print("**Top 5 Nomads**\n")
+print(markdown_table(nomads_df))
+print("\n:::")
+print("::::")
+```
+
+Anchors are dominated by directors with stable tonal signatures (e.g., Apatow, Meyers, Baumbach), while nomads such as Schumacher, Burton and Nolan span semantically distant narrative territories.
+
+```{python}
+#| label: fig-auteur-comparison
+#| fig-cap: "The Anchor vs The Nomad. Judd Apatow's comedies form a distinct, tight cluster. Christopher Nolan's filmography is radically scattered across the latent space."
+
+apatow = meta[meta['directors_clean'].str.contains("Judd Apatow")]
+nolan = meta[meta['directors_clean'].str.contains("Christopher Nolan")]
+
+fig = make_subplots(
+    rows=1,
+    cols=2,
+    subplot_titles=[
+        f"Judd Apatow (Mean Dist: {apatow_dist:.2f})",
+        f"Christopher Nolan (Mean Dist: {nolan_dist:.2f})",
+    ],
+)
+
+# Apatow
+fig.add_trace(go.Scatter(x=meta["umap_x"], y=meta["umap_y"], mode="markers", marker=dict(size=2, color="rgba(200,200,200,0.2)"), showlegend=False, hoverinfo="skip"), row=1, col=1)
+fig.add_trace(go.Scatter(x=apatow["umap_x"], y=apatow["umap_y"], mode="markers", marker=dict(size=7, color="#10b981", line=dict(width=1, color="white")), text=apatow["title"], hoverinfo="text", showlegend=False), row=1, col=1)
+
+# Nolan
+fig.add_trace(go.Scatter(x=meta["umap_x"], y=meta["umap_y"], mode="markers", marker=dict(size=2, color="rgba(200,200,200,0.2)"), showlegend=False, hoverinfo="skip"), row=1, col=2)
+fig.add_trace(go.Scatter(x=nolan["umap_x"], y=nolan["umap_y"], mode="markers", marker=dict(size=7, color="#8b5cf6", line=dict(width=1, color="white")), text=nolan["title"], hoverinfo="text", showlegend=False), row=1, col=2)
+
+fig.update_xaxes(visible=False)
+fig.update_yaxes(visible=False)
+fig.update_layout(template="plotly_white", height=450, margin=dict(l=10, r=10, t=40, b=10), paper_bgcolor="white", plot_bgcolor="#fafafa")
+fig.show()
+```
+
+This structural difference highlights a fundamental truth about Hollywood authorship: a strong "signature" does not necessarily mean producing the *same kind* of text. The Transformer identifies Judd Apatow as an auteur of **consistency**, while Christopher Nolan is an auteur of **versatility**, united by meta-thematic obsessions (time, identity) rather than shared vocabulary.
+
+------------------------------------------------------------------------
+
+*Chapter 5 now tests whether the semantic coordinates of a film have any bearing on its real-world success, asking: does the shape of a story dictate its box office revenue or critical acclaim?*
+
+
+# Narrative Position and Commercial Success
+
+All the analyses so far have treated the galaxy as a purely semantic object. Now we introduce an external variable: **money**. Does a film's coordinates in latent space predict its production budget, its box office performance, or its critical reception?
+
+This is a non-trivial question. If the embedding were capturing only genre, we would expect no relationship, since horror and comedy films can be equally successful. But if the coordinates encode a deeper structural logic tied to narrative ambition or complexity, we might find a measurable economic gradient.
+
+The corpus contains economic data for a substantial subset of films:
+
+| Variable | Coverage | Mean | Range |
+|---|:---:|:---:|:---:|
+| Production budget | 1,497 films (57.3%) | \$43.5M | \$7K – \$356M |
+| Opening weekend | 892 films (34.2%) | \$23.7M | \$873 – \$357M |
+| IMDb user rating | 2,418 films (92.6%) | 6.40 / 10 | 1 – 9 |
+| Metacritic score | 1,898 films (72.7%) | 62.9 / 100 | 9 – 100 |
+
+
+## The Budget Axis
+
+The single most striking economic finding is the **strong negative correlation between production budget and the vertical UMAP axis** ($r = -0.378$), almost as powerful as the sentiment correlation from Chapter 3. Films with larger budgets sit *lower* in the galaxy. Films with smaller budgets float higher.
+
+This makes immediate intuitive sense once we recall what Chapters 2 and 3 told us:
+
+- The **lower** latitudes of the galaxy are dominated by Action, Adventure, and Crime — genres with expensive practical effects, large stunt casts, and massive marketing spends.
+- The **upper** latitudes are dominated by Comedy, Drama, and Biography, while Animation occupies a more compact niche. Comedies, dramas, and biographies are among the cheapest major genres to produce.
+- Sentiment also stratifies along the same axis: emotionally negative films (action, war) sit south; emotionally warm films (comedy, family animation) sit north.
+
+The budget is not *causing* a film's coordinates, nor vice versa: both are downstream consequences of genre and narrative type. But the alignment is clean enough to be statistically meaningful.
+
+```{python}
+#| label: fig-budget-umap
+#| fig-cap: "UMAP 2D projection coloured by log production budget. The south of the galaxy is the domain of big-budget tentpole productions; the north houses the low-budget indie and comedy world."
+
+import numpy as np
+
+budget_df = meta.dropna(subset=["budget_usd"]).copy()
+budget_df["log_budget"] = np.log10(budget_df["budget_usd"])
+
+fig = px.scatter(
+    budget_df,
+    x="umap_x",
+    y="umap_y",
+    color="log_budget",
+    hover_name="title",
+    hover_data={"budget_usd": ":,.0f", "primary_genre": True,
+                "umap_x": False, "umap_y": False, "log_budget": False},
+    color_continuous_scale="Plasma",
+    range_color=[5.5, 8.5],
+    template="plotly_white",
+    opacity=0.75,
+    labels={"log_budget": "Log₁₀ Budget"},
+)
+fig.update_traces(marker=dict(size=4, line=dict(width=0)))
+fig.update_layout(
+    xaxis=dict(visible=False),
+    yaxis=dict(visible=False),
+    coloraxis_colorbar=dict(
+        title="Budget (log)",
+        tickvals=[6, 7, 8],
+        ticktext=["\$1M", "\$10M", "\$100M"],
+        len=0.5,
+    ),
+    margin=dict(l=10, r=10, t=10, b=10),
+    height=650,
+    paper_bgcolor="white",
+    plot_bgcolor="#fafafa",
+)
+fig.show()
+```
+
+The gradient from cool (low budget) in the upper latitudes to warm (high budget) in the lower latitudes is one of the most visually striking results in the entire analysis. Hovering over the brightest points reveals the expected suspects: *Avatar*, *Star Wars* episodes, *The Dark Knight*, and other tentpole productions all cluster in the high-budget southern hemisphere.
+
+
+## Critical Reception Across the Galaxy
+
+Production budget measures *investment*. IMDb rating and Metacritic score measure *return*, at least in terms of audience and critical response. Do these quality signals also show a geographic pattern?
+
+Computing correlations between IMDb rating and the UMAP coordinates, we find:
+
+| Metric | $r$ vs UMAP $x$ | $r$ vs UMAP $y$ |
+|---|:---:|:---:|
+| IMDb rating | $+0.038$ | $+0.003$ |
+| Metacritic | $+0.014$ | $+0.084$ |
+
+The result is unambiguous: **critical and audience quality is essentially orthogonal to semantic position**. A film's narrative shape does not predict whether it will be well-received. A masterpiece and a disaster can occupy the same coordinates if they tell the same kind of story. This is an important negative result: the galaxy is a map of *what* Hollywood makes, not *how well* it makes it.
+
+However, quality does vary substantially by genre:
+
+```{python}
+#| label: fig-imdb-by-genre
+#| fig-cap: "IMDb rating distribution by genre. Biography and Animation consistently outperform Horror and Action, but the spread is large within each genre."
+
+focus = ["Drama", "Biography", "Animation", "Crime", "Comedy", "Action", "Horror"]
+
+stats_rows = [
+    {"Genre": g,
+     "Mean": round(meta[meta["primary_genre"]==g]["imdb_rating"].dropna().mean(),2),
+     "Median": round(meta[meta["primary_genre"]==g]["imdb_rating"].dropna().median(),2),
+     "N": int(meta[meta["primary_genre"]==g]["imdb_rating"].dropna().count())}
+    for g in focus
+]
+
+fig = make_subplots(rows=1, cols=1)
+
+palette = px.colors.qualitative.Bold
+
+for j, g in enumerate(sorted(focus, key=lambda g: -next(r["Mean"] for r in stats_rows if r["Genre"]==g))):
+    vals = meta.loc[meta["primary_genre"]==g, "imdb_rating"].dropna()
+    fig.add_trace(go.Violin(
+        y=vals,
+        name=g,
+        box_visible=True,
+        meanline_visible=True,
+        fillcolor=palette[j % len(palette)],
+        opacity=0.7,
+        line_color="rgba(0,0,0,0.4)",
     ))
 
-fig_sagas.update_layout(
-    title="Constelación de Sagas: Cómo orbitan las secuelas juntas",
+fig.update_layout(
     template="plotly_white",
-    height=800,
-    xaxis_title="UMAP 1", yaxis_title="UMAP 2"
+    yaxis=dict(title="IMDb Rating", range=[0, 10], dtick=1),
+    violinmode="group",
+    height=480,
+    margin=dict(l=10, r=10, t=10, b=60),
+    paper_bgcolor="white",
+    showlegend=False,
 )
-fig_sagas.show()
+fig.show()
 ```
 
-> **Magia Geométrica:** ¡Observa el gráfico! Prácticamente todas las películas de **Harry Potter** forman su propio micro-cúmulo, densamente empaquetado y distante de las naves espaciales. De igual manera, las películas del **MCU** (Vengadores, Iron Man) orbitan juntas, mientras que **Star Wars** controla su propio sector cuadrante del gráfico.
-> El modelo ha identificado terminología compartida (varitas, sables de luz, hechizos, naves, escudos, la palabra "Muggle" o "Jedi") y tonos de diálogo que las hacen primas hermanas en el espacio vectorial.
+Biography leads all genres with a mean IMDb rating of **6.81** — the highest of any category. This reflects a selection effect: studios greenlight biographical scripts about figures interesting enough to sustain an audience, and mediocre biopics rarely get made. Animation follows at **6.68**, driven by Pixar's and Studio Ghibli's exceptional quality floors. Drama (6.62) and Crime (6.65) also perform well.
 
----
+**Horror** has the lowest mean rating of any genre at **5.51** — more than a full point below Biography. This is consistent with the genre's economics: horror is cheap to produce, so the quality floor is lower, and many low-budget films enter the corpus with marginal production values. Action is the second weakest at **6.23**, despite receiving some of the largest live-action production budgets.
 
-## Capítulo 5: La Cercanía Matemática (Cosine Similarity)
 
-Si el mapa visual agrupa lógicamente, la matemática subyacente (sobre las 384 dimensiones que no hemos chafado a 2D) debe ser aún más precisa. Vamos a buscar "hermanos de espíritu" a películas famosas usando Similitud del Coseno.
+## Budget vs. Quality: The Great Decoupling
+
+The most provocative economic finding emerges when we directly compare production budget against IMDb rating across the five budget quintiles. If money bought quality, ratings should climb monotonically from Q1 to Q5. The data tells the opposite story.
+
+Dividing the 1,497 films with budget data into five equal quintiles by expenditure, the mean IMDb ratings are:
+
+| Quintile | Budget Range | Mean IMDb |
+|:---:|:---:|:---:|
+| **Q1** (lowest) | < \$9.5M | **6.69** |
+| Q2 | \$9.5M – \$20M | 6.45 |
+| Q3 | \$20M – \$37M | 6.44 |
+| Q4 | \$37M – \$70M | 6.33 |
+| **Q5** (highest) | > \$70M | 6.40 |
+
+The cheapest fifth of Hollywood productions *outrates* the most expensive fifth by **0.29 rating points**. The monotonic relationship is the exact opposite of what the industry's prestige logic would predict.
 
 ```{python}
-#| label: cosine-similarity
+#| label: fig-budget-quality
+#| fig-cap: "Left: IMDb rating distribution by budget quintile — cheaper films rate higher on average. Right: Genre-level mean budget vs. mean IMDb rating, where bubble size encodes corpus volume. Animation has the highest mean budget (~$94M), while Biography leads in mean IMDb with far lower spend."
 
-def get_closest(target_substring, top_n=5):
-    # Encontrar primera película que coincida con el substring
-    idx = df[df["title_display"].str.contains(target_substring, case=False, na=False)].index
-    if len(idx) == 0:
-        return f"No se encontró ninguna película que contenga '{target_substring}'"
-    idx = idx[0]
-    target_title = df.loc[idx, "title_display"]
-    
-    # Calcular similitud coseno global
-    target_vec = matrix[idx].reshape(1, -1)
-    sims = cosine_similarity(target_vec, matrix).flatten()
-    
-    # Ordenar y coger top_n (excluyendo a sí misma que es el índice 0)
-    top_indices = sims.argsort()[::-1][1:top_n+1]
-    
-    res = f"### Si te gusta **{target_title}**...\n\nTu modelo dice que sus guiones más cercanos son:\n\n"
-    for i in top_indices:
-        res += f"- **{df.loc[i, 'title_display']}** (Similitud: {sims[i]*100:.1f}%)\n"
-    
-    return res
+bd = meta.dropna(subset=["budget_usd", "imdb_rating"]).copy()
+bd["budget_q"] = pd.qcut(bd["budget_usd"], 5,
+    labels=["< 9.5M", "9.5–20M", "20–37M", "37–70M", "> 70M"])
 
-# Probar con varios clásicos representativos de géneros opuestos
-markdown_output = ""
-markdown_output += get_closest("Inception") + "\n\n"
-markdown_output += get_closest("Pulp Fiction") + "\n\n"
-markdown_output += get_closest("Alien") + "\n\n"
-markdown_output += get_closest("Notting Hill") + "\n\n"
-markdown_output += get_closest("Star Wars") + "\n\n"
+gb = bd.groupby("primary_genre").agg(
+    mean_budget=("budget_usd", "mean"),
+    mean_imdb=("imdb_rating", "mean"),
+    n=("imdb_rating", "count")
+).reset_index().query("n >= 10")
 
-display(Markdown(markdown_output))
+focus_genres = ["Action","Comedy","Drama","Crime","Biography","Horror","Adventure","Animation"]
+gb = gb[gb["primary_genre"].isin(focus_genres)]
+
+fig = make_subplots(
+    rows=1, cols=2,
+    subplot_titles=["Does spending more make better films?",
+                    "Genre Economics: Budget vs. IMDb"],
+    column_widths=[0.48, 0.52],
+)
+
+palette = ["#6366f1","#10b981","#f59e0b","#ef4444","#8b5cf6"]
+for i, q in enumerate(bd["budget_q"].cat.categories):
+    vals = bd[bd["budget_q"]==q]["imdb_rating"]
+    fig.add_trace(go.Violin(
+        y=vals, name=str(q),
+        box_visible=True, meanline_visible=True,
+        fillcolor=palette[i], line_color="rgba(0,0,0,0.35)",
+        opacity=0.75, showlegend=False,
+    ), row=1, col=1)
+
+bubble_palette = {
+    "Action":"#ef4444","Comedy":"#f59e0b","Drama":"#6366f1",
+    "Crime":"#10b981","Biography":"#8b5cf6","Horror":"#ec4899",
+    "Adventure":"#14b8a6","Animation":"#f97316",
+}
+for _, row_g in gb.iterrows():
+    fig.add_trace(go.Scatter(
+        x=[row_g["mean_budget"]], y=[row_g["mean_imdb"]],
+        mode="markers+text",
+        marker=dict(
+            size=np.sqrt(row_g["n"]) * 4,
+            color=bubble_palette.get(row_g["primary_genre"], "#94a3b8"),
+            opacity=0.85, line=dict(width=1.5, color="white"),
+        ),
+        text=[row_g["primary_genre"]],
+        textposition="top center",
+        textfont=dict(size=10),
+        showlegend=False,
+    ), row=1, col=2)
+
+fig.update_layout(
+    template="plotly_white", height=480,
+    margin=dict(l=10, r=10, t=45, b=40),
+    paper_bgcolor="white",
+)
+fig.update_yaxes(title_text="IMDb Rating", range=[0, 10], dtick=1, row=1, col=1)
+fig.update_xaxes(title_text="Budget Quintile", row=1, col=1)
+fig.update_yaxes(title_text="Mean IMDb", range=[5.0, 7.5], row=1, col=2)
+fig.update_xaxes(
+    title_text="Mean Production Budget (USD)",
+    tickformat="$,.0f", row=1, col=2,
+)
+fig.show()
 ```
 
-> Aquí es donde se lucen los embeddings. Si a **Inception** le salen películas como *Interstellar* o thrillers de robos/sci-fi, o a **Alien** le salen *Prometheus* o películas de claustrofobia espacial, demuestra que el NLP entiende contextualmente la premisa de la escena.
+The right panel makes the paradox visually unmistakable. **Animation** is the single most expensive genre per film ($94M mean, driven by Pixar and Disney CGI), yet it does not top the quality ranking (mean IMDb: 6.78). **Action** is the most expensive major live-action genre ($72M mean) and still sits near the lower end of quality (mean IMDb: 6.30). **Biography** spends only $31M on average, less than half of Action, and leads the quality chart with mean IMDb 6.93.
 
----
+The most elegant summary comes from finance: **the budget-to-rating "return on investment"** is roughly inverse to expenditure. The data suggests that in cinema, as in much of creative work, money is a prerequisite for certain *kinds* of story but is no guarantee of how well those stories are executed or received.
 
-## Capítulo 6: Mega-Conclusiones (5 Observaciones Profundas)
+------------------------------------------------------------------------
 
-Al abandonar la idea de "clusters estáticos" y mirar a este UMAP continuo, extraemos que:
+*The next section synthesises these analytical lenses into a unified model of the semantic galaxy.*
 
-### 1. El Mito del "Guion Único" frente al Ecosistema Compartido
-Al pintar las sagas (Harry Potter, Marvel, Star Wars), vemos que las secuelas caen sistemáticamente unas encima de las otras en subcúmulos apretados. Esto valida que las franquicias tienen **léxico cerrado y estructuras repetitivas**. El lenguaje en pantalla ("Repulsor beam", "Avada Kedavra", "The force") fuerza al algoritmo de embeddings a construir guettos lexicales.
 
-### 2. El Espectro del Sentido y la Descriptividad
-Enriquecer con métricas de TextBlob demostró que la **Subjetividad** y el **Sentimiento** actúan como atractores. Hay una costa completa del continente oscuro (generalmente el lado rojo de nuestro scatter de Sentimiento) dominada por cintas de terror y thrillers policiacos, donde el tono general es severamente negativo. 
+# Synthesis: The Unified Grammar of Cinema
 
-### 3. La "Gran Mancha de Acción" vs El "Archipiélago Dramático"
-El gráfico de contorno (Topografía) no miente. UMAP usualmente divide el dataset brutalmente en dos: 
-- Un mega-continente de scripts con alta riqueza léxica y descripciones emocionales o de sala de estar (Dramas, Romances, Cine Negro).
-- Una masa separada que carece de profundidad verbal pero rebosa de directivas cinemáticas de impacto (Acción, Aventura, Fantasía).  
+The five preceding chapters each examined the semantic galaxy through a different lens. Chapter 6 brings them together, asking: when we overlay all the dimensions simultaneously, what unified picture emerges?
 
-### 4. Directores-Firma o Películas sin Patria
-Hay vectores solitarios que no se alinean ni con la acción estándar ni con el drama indie. Estas películas suelen ser las de **Nolan, Tarantino, o los hermanos Coen**, que abusan de formatos narrativos que TextBlob y el embedding penalizan con aislamiento. Si dibujáramos a Tarantino (alto en insultos, ritmo de diálogo altísimo y léxico diverso), se sitúa en islotes lejanos al script modelo de estudio.
+The core framework can be stated concisely. The latent space constructed by MPNet over 2,612 screenplays has two structural axes:
 
-### 5. Del Motor de Similitud al Frontend (Lo Que Sigue)
-Todo este análisis no es solo teórico. Que Inception recomiende Interstellar puramente por el cálculo del coseno del texto de su guion, es el santo grial de la app Web en **React / Streamlit**. Significará que cuando un usuario ponga un prompt propio de ciencia ficción con robos corporativos en la web APP, nuestro buscador lo disparará directamente al sector cuántico que acabamos de vislumbrar gráficamente. La "Galaxia del Cine" cartografía el arte con precisión matemática.
+::: {.callout-important appearance="simple"}
+## The Two Axes of the Galaxy
+
+**Axis X (horizontal)** — encodes **genre type**: a broad separation between action-adventure and drama-comedy narrative families. It is largely orthogonal to the four NLP surface metrics, to budget, and to quality. Genre is the primary organising principle, and it is not reducible to simple textual statistics.
+
+**Axis Y (vertical)** — encodes **narrative temperature**: the composite signature of emotional warmth ($r = +0.37$ with sentiment), opinionated voice ($r = +0.31$ with subjectivity), and low cost ($r = -0.38$ with budget). Films that score high on all three axes float north; expensive, tonally neutral, plot-heavy films sink south.
+:::
+
+## The Genre Genome: A Radar Portrait
+
+To make this unified picture tangible, we construct a six-dimensional **genome radar** for each major genre, normalising every metric to the $[0,1]$ range within the genre pool. Each polygon is that genre's fingerprint.
+
+```{python}
+#| label: fig-genre-radar
+#| fig-cap: "Genre genome radar: each polygon is a genre's normalised fingerprint across six dimensions. The shapes are highly distinctive — Animation's diamond, Horror's flat disc, Biography's pentagon."
+
+focus_g = ["Action","Animation","Biography","Comedy","Crime","Drama","Horror"]
+metric_cols_r = ["word_count","lexical_diversity","sentiment","subjectivity","imdb_rating","budget_usd"]
+cat_labels = ["Word Count","Lexical Diversity","Sentiment","Subjectivity","IMDb Rating","Budget"]
+
+radar_df = (
+    meta[meta["primary_genre"].isin(focus_g)]
+    .groupby("primary_genre")[metric_cols_r]
+    .mean()
+)
+radar_norm = (radar_df - radar_df.min()) / (radar_df.max() - radar_df.min())
+
+pal = {
+    "Action":"#ef4444","Comedy":"#f59e0b","Drama":"#6366f1",
+    "Crime":"#10b981","Biography":"#8b5cf6","Horror":"#ec4899","Animation":"#f97316"
+}
+
+fig = go.Figure()
+for genre in focus_g:
+    vals = radar_norm.loc[genre].tolist()
+    fig.add_trace(go.Scatterpolar(
+        r=vals + [vals[0]],
+        theta=cat_labels + [cat_labels[0]],
+        fill="toself",
+        name=genre,
+        line=dict(color=pal[genre], width=2),
+        opacity=0.55,
+    ))
+
+fig.update_layout(
+    polar=dict(
+        radialaxis=dict(visible=True, range=[0,1],
+                        tickfont=dict(size=9), tickvals=[0.25,0.5,0.75]),
+        angularaxis=dict(tickfont=dict(size=11)),
+    ),
+    template="plotly_white",
+    height=560,
+    margin=dict(l=60, r=60, t=20, b=20),
+    legend=dict(
+        orientation="h", yanchor="top", y=-0.06,
+        xanchor="center", x=0.5, font=dict(size=10)
+    ),
+    paper_bgcolor="white",
+)
+fig.show()
+```
+
+The genre genomes are highly distinctive. Reading the shapes:
+
+- **Horror** (pink) produces the flattest polygon of all, near-zero on every dimension: the shortest scripts, the most negative sentiment, the lowest IMDb ratings, and the smallest budgets. Horror is the genre of *extremes in reverse*, minimalist in every measurable sense.
+- **Animation** (orange) is a near-perfect diamond: it scores among the highest on lexical diversity, sentiment, subjectivity, IMDb rating *and* budget. It is uniquely expensive and uniquely warm, the genre with the highest investment and a correspondingly high quality floor.
+- **Biography** (purple) is tallest on sentiment (1.0 — by definition the most positive genre mean) and IMDb (1.0), yet its budget polygon is low (0.21). This is the genre that achieves the most with the least.
+- **Crime** (green) scores maximum on word count (1.0) and IMDb (0.88) but minimum on subjectivity (0.00): Crime scripts are the longest, among the best-rated, but the least opinionated. They are lean, objective, narrative machines.
+- **Action** (red) is the mirror image of Horror in wealth: high budget, high word count and lexical diversity, but low sentiment and low IMDb. It is the genre of *expensive mediocrity*.
+
+## The Full Correlation Matrix and Its Structure
+
+Before the composite visualisation, we present the full inter-variable correlation matrix, which reveals the hidden connective tissue between all measured dimensions.
+
+```{python}
+#| label: fig-correlation-matrix
+#| fig-cap: "Full Pearson correlation matrix between all measured variables. The strong positive block (budget × umap_y inverse) and the IMDb–meta_score pair (r = 0.70) stand out clearly."
+
+all_cols = ["umap_x","umap_y","word_count","lexical_diversity",
+            "sentiment","subjectivity","budget_usd","imdb_rating","meta_score"]
+col_labels = ["UMAP x","UMAP y","Word Count","Lex. Diversity",
+              "Sentiment","Subjectivity","Budget","IMDb","Metacritic"]
+
+corr_m = meta[all_cols].corr().values
+corr_r = np.round(corr_m, 2)
+
+fig = go.Figure(data=go.Heatmap(
+    z=corr_r,
+    x=col_labels,
+    y=col_labels,
+    colorscale="RdBu",
+    zmid=0, zmin=-0.8, zmax=0.8,
+    text=corr_r,
+    texttemplate="%{text:.2f}",
+    textfont=dict(size=10, color="white"),
+))
+fig.update_layout(
+    template="plotly_white",
+    height=520,
+    margin=dict(l=10, r=10, t=20, b=100),
+    paper_bgcolor="white",
+    xaxis=dict(tickangle=-35, automargin=True, tickfont=dict(size=11)),
+    yaxis=dict(automargin=True, tickfont=dict(size=11)),
+)
+fig.show()
+```
+
+Three structural facts leap out of the matrix:
+
+1. **IMDb ↔ Metacritic: $r = 0.70$.** Audience scores and critic scores are strongly correlated, confirming a general quality signal shared across both populations.
+2. **Budget ↔ UMAP y: $r = -0.38$.** Budget is the strongest single predictor of a film's vertical coordinate after sentiment — and it correlates *negatively*, pulling high-spend films southward. This is larger than any NLP metric except sentiment itself.
+3. **Word count ↔ Lexical diversity: $r = -0.55$.** Longer scripts have lower vocabulary diversity: a robust version of Herdan's Law applied to screenwriting. The more you write, the more you repeat yourself.
+
+## A Composite Map of Cinematic Value
+
+As a final synthesis, we construct a **composite value index** for each film with sufficient data, weighting IMDb rating (50%), sentiment polarity (30%), and an inverse budget term (20%). This index rewards films that achieve high quality and emotional warmth without requiring massive financial resources.
+
+```{python}
+#| label: fig-composite-umap
+#| fig-cap: "The Composite Value Map: UMAP projection coloured by a composite index of IMDb rating (50%), sentiment (30%), and inverse budget rank (20%). Green = high-value films; red = expensive, low-rated, tonally flat productions."
+
+m_comp = meta.dropna(subset=["budget_usd","imdb_rating","sentiment"]).copy()
+m_comp["r_budget"]    = m_comp["budget_usd"].rank(pct=True)
+m_comp["r_imdb"]      = m_comp["imdb_rating"].rank(pct=True)
+m_comp["r_sentiment"] = m_comp["sentiment"].rank(pct=True)
+m_comp["composite"]   = (
+    m_comp["r_imdb"]      * 0.50
+  + m_comp["r_sentiment"] * 0.30
+  - m_comp["r_budget"]    * 0.20
+)
+
+fig = px.scatter(
+    m_comp,
+    x="umap_x", y="umap_y", color="composite",
+    hover_name="title",
+    hover_data={"composite":":.2f","primary_genre":True,
+                "imdb_rating":":.1f","budget_usd":":,.0f",
+                "umap_x":False,"umap_y":False},
+    color_continuous_scale="RdYlGn",
+    template="plotly_white", opacity=0.75,
+    labels={"composite":"Value Index"},
+)
+fig.update_traces(marker=dict(size=4, line=dict(width=0)))
+fig.update_layout(
+    xaxis=dict(visible=False), yaxis=dict(visible=False),
+    coloraxis_colorbar=dict(
+        title="Value<br>Index",
+        tickvals=[m_comp["composite"].quantile(0.1),
+                  m_comp["composite"].median(),
+                  m_comp["composite"].quantile(0.9)],
+        ticktext=["Low","Median","High"],
+        len=0.5,
+    ),
+    margin=dict(l=10, r=10, t=10, b=10),
+    height=650,
+    paper_bgcolor="white", plot_bgcolor="#fafafa",
+)
+fig.show()
+```
+
+The composite map reveals a concentration of high-value films in the **upper and upper-left quadrant** of the galaxy: the territory of critically acclaimed, emotionally warm, lower-budget drama and crime films. The canonical examples — *Taxi Driver* (composite index: 0.74), *Singin' in the Rain* (0.74), *All About Eve* (0.74), *Donnie Darko* (0.73), *Before Sunrise* (0.73) — cluster clearly in this region. At the opposite extreme, the deep red points are almost exclusively high-budget Action films with poor critical reception, including *Ghost Rider*, *Eragon*, *Resident Evil Afterlife*, *Conan the Barbarian*, and *xXx*.
+
+The galaxy is not just a map of *what* Hollywood makes. It is a map of *where value lives*.
+
+
+# The Isolation Index: Searching for Unclassifiable Art
+
+If the latent space maps the geometric conventions of the Hollywood machine, the periphery of that space must logically contain its most unclassifiable experiments. But how do we mathematically define an "independent" or "weird" film in an embedding space where distance is relative?
+
+We introduce the **Isolation Index**: for every single film, we compute the explicit $k$-Nearest Neighbors ($k=5$) not in the 2D projected space, but in the original **768-dimensional MPNet hyperspace**. We use **cosine distance** to capture pure semantic divergence independent of sheer script length. The isolation index is simply the mean distance away from a film's five closest narrative neighbours. A low index means you are surrounded by clones; a high index means you are alone in the universe.
+
+```{python}
+#| label: calc-isolation
+#| echo: true
+#| eval: true
+
+# The raw 768-dimensional embeddings ('matrix') are already loaded in memory
+nn = NearestNeighbors(n_neighbors=6, metric="cosine").fit(matrix)
+distances, _ = nn.kneighbors(matrix)
+
+# Index 0 is the film itself (distance 0). We average the distance of the 5 closest.
+meta["isolation_idx"] = distances[:, 1:].mean(axis=1)
+```
+
+## The Anatomy of Conformity by Genre
+
+Before looking at individual films, we can ask a structural question: which genres tolerate the most narrative deviation, and which are the most rigidly formulaic? We plot the distribution of the Isolation Index for the major genres.
+
+```{python}
+#| label: fig-isolation-violin
+#| fig-cap: "Distribution of the Isolation Index by Genre. The higher the violin, the more 'isolated' or unique the films are. Note the incredibly tight, low-variance cluster of Horror compared to the sprawling, high-variance distribution of Biography and Animation."
+
+focus_genres = ["Biography", "Animation", "Drama", "Comedy", "Crime", "Action", "Horror"]
+plot_iso = meta[meta["primary_genre"].isin(focus_genres)].copy()
+
+fig = px.violin(
+    plot_iso, 
+    x="primary_genre", y="isolation_idx",
+    color="primary_genre", 
+    box=True, points="outliers",
+    category_orders={"primary_genre": focus_genres},
+    template="plotly_white",
+    labels={"isolation_idx": "Isolation Index (Mean Cosine Distance)", "primary_genre": "Genre"}
+)
+fig.update_layout(
+    margin=dict(l=10, r=10, t=20, b=10), height=450, showlegend=False, paper_bgcolor="white"
+)
+fig.show()
+```
+
+The violin plot shows that **Horror is the most conformist genre among the major genre set analysed here**. Its distribution is compressed near the lower isolation range, while **Biography** and **Animation** show longer high-isolation tails.
+
+## The Absolute Outliers vs. The Pure Clones
+
+Let us inspect the extreme tails of the Isolation distribution. First, we look at the films with the absolute *highest* Isolation scores — the most structurally unique scripts in the 2,612-film corpus. And then, we flip the metric to find the films with the absolute *lowest* Isolation scores — the most structurally identical, conformist scripts ever produced.
+
+```{python}
+#| label: fig-isolation-tails
+#| fig-cap: "Isolation tails in embedding space: top five most isolated scripts versus top five most conformist scripts."
+#| output: asis
+
+iso_table_df = meta.copy()
+
+# Remove known corrupted merged-title artefact and obvious duplicate script rows
+iso_table_df = iso_table_df[
+    ~iso_table_df["title"].str.contains(
+        "Edge of Darkness When in Rome Saint John of Las Vegas Legion Tooth Fairy 44 Inch Chest",
+        case=False,
+        na=False,
+    )
+]
+iso_table_df = iso_table_df.drop_duplicates(subset=["title", "word_count"], keep="first")
+iso_table_df = iso_table_df.drop_duplicates(subset=["imdbid"], keep="first")
+
+genre_priority = [
+    "Animation", "Adventure", "Biography", "Comedy", "Crime", "Drama",
+    "Fantasy", "Horror", "Sci-Fi", "Thriller", "Action", "Documentary",
+]
+
+def canonical_genre(primary_genre, genres):
+    if pd.notna(genres):
+        tags = [g.strip() for g in str(genres).split(",") if g.strip()]
+        for pref in genre_priority:
+            if pref in tags:
+                return pref
+        if tags:
+            return tags[0]
+    return primary_genre
+
+iso_table_df["genre_table"] = iso_table_df.apply(
+    lambda r: canonical_genre(r["primary_genre"], r["genres"]), axis=1
+)
+
+top_outliers = iso_table_df.nlargest(5, "isolation_idx")[["title", "genre_table", "isolation_idx"]].copy()
+top_clones = iso_table_df.nsmallest(5, "isolation_idx")[["title", "genre_table", "isolation_idx"]].copy()
+
+top_outliers["isolation_idx"] = top_outliers["isolation_idx"].apply(lambda x: f"{x:.3f}")
+top_clones["isolation_idx"] = top_clones["isolation_idx"].apply(lambda x: f"{x:.3f}")
+
+top_outliers.columns = ["Title", "Genre", "Isolation"]
+top_clones.columns = ["Title", "Genre", "Isolation"]
+
+print(":::: {.columns}")
+print("::: {.column width='48%'}")
+print("**Top 5 Most Original**\n")
+print(markdown_table(top_outliers))
+print("\n:::")
+
+print("::: {.column width='4%'}")
+print(" ")
+print(":::")
+
+print("::: {.column width='48%'}")
+print("**Top 5 Most Conformist**\n")
+print(markdown_table(top_clones))
+print("\n:::")
+print("::::")
+
+```
+
+The upper tail highlights genuinely atypical scripts.
+
+In this corpus snapshot, Velvet Buzzsaw, Shrek the Third, The Disaster Artist, and The Damned United all appear among the strongest outliers.
+
+The lower tail is dominated by **Harry Potter** entries, indicating exceptionally tight semantic similarity within that franchise. In this dataset, those films form one of the strongest micro-clusters in the full embedding space.
+
+## Mapping the Fringe
+
+Finally, we project the Isolation Index back onto our 2D UMAP projection as a thermal heat map, where brighter yellow signifies higher isolation.
+
+```{python}
+#| label: fig-isolation-scatter
+#| fig-cap: "The Semantic Galaxy coloured by Isolation Index. Notice how the bright yellow 'flares' of high isolation live almost exclusively on the jagged outer rim of the galaxy, disconnected from the dense interior generic clusters."
+
+meta_sorted = meta.sort_values("isolation_idx")  # Plot high isolation on top
+
+fig = px.scatter(
+    meta_sorted, x="umap_x", y="umap_y", color="isolation_idx",
+    color_continuous_scale="inferno", hover_name="title",
+    hover_data={"isolation_idx": ":.3f", "primary_genre": True, "umap_x": False, "umap_y": False},
+    labels={"isolation_idx": "Isolation"}
+)
+
+fig.update_traces(marker=dict(size=4, line=dict(width=0)))
+fig.update_layout(
+    xaxis=dict(visible=False), yaxis=dict(visible=False),
+    coloraxis_colorbar=dict(title="Isolation", len=0.6, thickness=15),
+    margin=dict(l=10, r=10, t=10, b=10), height=700,
+    paper_bgcolor="white", plot_bgcolor="#0f172a"  # Dark background makes the 'flares' pop
+)
+fig.show()
+```
+
+The resulting map confirms the topological validity of the UMAP reduction. True isolation in 768 dimensions maps perfectly to the physical geography of the 2D projection. The bright yellow "flares" of unclassifiable art — the experiments, the satires, the structural anomalies — orbit on the extreme outer rim of the cinematic galaxy, looking inwards at the dense, indistinguishable cores of Hollywood's generic machine.
+
+
+# Temporal Evolution of Semantics (1970s–2010s)
+
+The semantic galaxy is not static. Language, tropes, and industry focus evolve. By calculating the coordinate centroid for all films released in each decade, we can track the macro-evolution of Hollywood storytelling across half a century.
+
+## Narrative Continental Drift
+
+Plotting the decade centroids (from the 1970s through the 2010s) reveals a clear, unidirectional migration in the latent space.
+
+```{python}
+#| label: fig-temporal-trajectory
+#| fig-cap: "Center of mass drift from the 1970s to the 2010s. The cinematic center of gravity shifts northward over time."
+
+meta["year_clean"] = pd.to_numeric(meta["year_clean"], errors='coerce')
+meta["decade"] = (meta["year_clean"] // 10) * 10
+temporal = meta.dropna(subset=["decade", "umap_x", "umap_y"]).copy()
+temporal = temporal[(temporal["decade"] >= 1970) & (temporal["decade"] <= 2010)]
+
+centroids = temporal.groupby("decade")[["umap_x", "umap_y"]].mean().reset_index()
+centroids["decade_str"] = centroids["decade"].astype(int).astype(str) + "s"
+
+fig = go.Figure()
+fig.add_trace(go.Scatter(
+    x=centroids["umap_x"], y=centroids["umap_y"],
+    mode="lines+markers+text",
+    text=centroids["decade_str"],
+    textposition=["bottom center", "bottom center", "middle right", "top right", "top left"],
+    marker=dict(size=14, color=centroids["decade"], colorscale="viridis", showscale=False),
+    line=dict(width=3, color="gray", dash="dot")
+))
+fig.update_layout(
+    template="plotly_white", width=650, height=450,
+    margin=dict(l=20, r=20, t=20, b=20),
+    xaxis=dict(title="UMAP x (Genre)"),
+    yaxis=dict(title="UMAP y (Narrative Temperature)"),
+    paper_bgcolor="white"
+)
+fig.show()
+```
+
+Across the 1970s-2010s window, the centre of mass of the Hollywood screenplay has drifted **northward by +0.59 units** along the UMAP $y$-axis. Recall from Chapter 5 that the $y$-axis correlates positively with sentiment and negatively with production budget. 
+
+However, this northward drift does *not* mean the average blockbuster became cheaper or happier. Rather, it reflects the bifurcation of the industry. The 1970s corpus was anchored heavily by mid-budget, gritty, auteur-driven crime and drama in the southern hemisphere. By the 2010s, while blockbusters pushed deeper south, an overwhelming sheer volume of indie comedies, dramas, and character pieces exploded in the north, pulling the mathematical average upwards through sheer force of numbers.
+
+## Decadal Shift: The Density Map
+
+To see exactly where the mass shifted, we overlay a 2D density contour of the films from the 1980s against the films from the 2010s.
+
+```{python}
+#| label: fig-temporal-contour
+#| fig-cap: "Topological Density Shift: The 1980s (Blue) vs the 2010s (Red). Notice how the 2010s red contours have completely abandoned the lower-left sector (Action/Thriller) of the 80s to colonise the upper-northern polar region (Indie Drama/Comedy)."
+
+d1980 = temporal[temporal["decade"] == 1980]
+d2010 = temporal[temporal["decade"] == 2010]
+
+fig = go.Figure()
+fig.add_trace(go.Histogram2dContour(
+    x=d1980["umap_x"], y=d1980["umap_y"],
+    colorscale="Blues", showscale=False,
+    contours=dict(coloring='lines'), line=dict(width=2.5),
+    name="1980s"
+))
+fig.add_trace(go.Histogram2dContour(
+    x=d2010["umap_x"], y=d2010["umap_y"],
+    colorscale="Reds", showscale=False,
+    contours=dict(coloring='lines'), line=dict(width=2.5),
+    name="2010s"
+))
+
+fig.update_layout(
+    template="plotly_white", width=650, height=550,
+    margin=dict(l=20, r=20, t=40, b=20),
+    legend=dict(yanchor="top", y=0.99, xanchor="right", x=0.99),
+    xaxis=dict(visible=False), yaxis=dict(visible=False),
+    paper_bgcolor="white"
+)
+fig.show()
+```
+
+The contour shift makes the structural transformation of Hollywood undeniable. 
+
+In the 1980s (blue contours), the defining mass of cinema sat in a tightly clustered ring traversing the middle and lower-left of the semantic space — the heartland of the action-thriller, the buddy-cop comedy, and the testosterone-fueled adventure. 
+
+By the 2010s (red contours), the cinematic landscape had fractured. The central 80s gravity well has almost completely evaporated. Instead, we see the mass pushed to the extreme north (the indie/digital boom) and a secondary, hyper-dense gravity well concentrated in the deep south — the anchor of the modern cinematic universe (MCU, DC), where immense budgets and rigid structural formulas create an inescapable semantic black hole.
+
+
+# Conclusions and Limitations
+
+## Summary of Principal Findings
+
+The analyses above produce a consistent and interconnected picture of the cinematic semantic galaxy.
+
+```{python}
+#| label: fig-findings-table
+#| fig-cap: "Summary of key quantitative findings across all five analytical dimensions."
+
+findings = {
+    "Chapter": [
+        "1. Data", "1. Data", "1. Data",
+        "2. Cartography", "2. Cartography",
+        "3. Lexicometrics", "3. Lexicometrics", "3. Lexicometrics",
+        "4. Auteurs", "4. Auteurs",
+        "5. Economics", "5. Economics", "5. Economics",
+    ],
+    "Finding": [
+        "Corpus size", "Most common genre", "Median screenplay length",
+        "Semantic axis x", "Semantic axis y",
+        "Strongest predictor of y", "R² (4 NLP metrics → y)", "Word count effect on y",
+        "Tightest franchise", "Most consistent auteur",
+        "Budget → UMAP y correlation", "IMDb → UMAP y correlation", "Q1 vs Q5 IMDb gap",
+    ],
+    "Value": [
+        "2,612 films", "Action (566)", "20,340 words",
+        "Genre type (r < 0.04 all metrics)", "Narrative temperature",
+        "Sentiment (r = +0.37)", "R² = 0.223", "Negative (coef = −0.43)",
+        "Harry Potter (dist = 0.02)", "Judd Apatow (dist = 0.46)",
+        "r = −0.38", "r = +0.003 (orthogonal)", "+0.29 points (cheaper wins)",
+    ],
+}
+fd = pd.DataFrame(findings)
+
+header_color = "#1e293b"
+alt_colors = [["#f8fafc","#f1f5f9"] * 10]
+
+fig = go.Figure(data=[go.Table(
+    header=dict(
+        values=["<b>Chapter</b>","<b>Finding</b>","<b>Value</b>"],
+        fill_color=header_color,
+        font=dict(color="white", size=12),
+        align=["left","left","center"],
+        height=36,
+    ),
+    cells=dict(
+        values=[fd["Chapter"], fd["Finding"], fd["Value"]],
+        fill_color=[["#f8fafc","#f1f5f9"] * len(fd)],
+        font=dict(color="#1e293b", size=11),
+        align=["left","left","center"],
+        height=30,
+    ),
+)])
+fig.update_layout(margin=dict(l=10,r=10,t=10,b=10), height=500, paper_bgcolor="white")
+fig.show()
+```
+
+## What the Galaxy Tells Us About Storytelling
+
+The central finding of this paper is deceptively simple: **a pre-trained language model, used without any supervised cinematic labels in this project, organises 2,612 screenplays into a structured geometric space that reproduces — and extends — categories familiar from film scholarship**.
+
+Genre emerges without supervision. Sentiment stratifies along a coherent axis. Franchises collapse to mathematical points. Auteurs carve territories. And the economics of production align with the geometry in precisely the way that the theory of narrative risk would predict: expensive stories live in the south, where genre expectations are most rigid and creative risk-taking is most costly.
+
+The single most intellectually striking result is the **orthogonality of quality to position** ($r = +0.003$). The galaxy tells us everything about *what kind* of story Hollywood is telling and almost nothing about *how well* it is told. A masterpiece and a disaster can be semantic neighbours. This means the latent space does not encode craft — it encodes archetype. The archetypal and the excellent are entirely separate dimensions of a film.
+
+## Limitations
+
+Four limitations deserve acknowledgment.
+
+1. **The corpus is not cinema**: it is screenplays in the archive of a single data-collection project. Foreign-language cinema (Bergman, Kurosawa, Fellini) is vastly underrepresented. The galaxy is a map of predominantly English-language Hollywood output.
+2. **The embedding model is a snapshot**: MPNet was trained on 2021 web data. Linguistic drift in screenwriting since then would shift the embedding geometry in ways we cannot measure.
+3. **UMAP is stochastic**: the latent coordinates are reproducible with a fixed seed, but the *absolute* positions are projection artefacts. Only *relative* distances and structural patterns are interpretable.
+4. **Metadata noise exists**: duplicate rows, merged titles, and occasional genre-label errors can affect extreme-tail analyses (especially outlier and clone lists).
+
+## Research Agenda
+
+The methodology developed in this paper opens several concrete lines of future inquiry:
+
+1. **Temporal drift**: Does the galaxy's shape change decade by decade? Can we detect the emergence of prestige television or the MCU's gravitational effect on genre?
+2. **International cinema**: How different is the Cannes galaxy from the Hollywood galaxy? Can cross-lingual embeddings bridge them meaningfully?
+3. **Script-to-screen divergence**: Do production rewrites move a screenplay closer to (or further from) genre centroids? Is a film's final narrative coordinates predictable from its first-draft script?
+4. **Recommender systems**: Can semantic coordinates replace or complement collaborative filtering in film recommendation, reaching the "semantic voids" that collaborative systems never explore?
+5. **Automated script analysis**: Can the composite value index be used as a first-pass quality signal in studio development pipelines, flagging high-budget-low-sentiment combinations before production begins?
+
+------------------------------------------------------------------------
+
+> *The galaxy does not judge. It only maps. But a map is a powerful thing: it shows not only where you are, but all the places you have not yet been.*

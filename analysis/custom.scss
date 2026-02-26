@@ -1,0 +1,77 @@
+/*-- scss:defaults --*/
+$body-bg: #f8f9fa;
+$body-color: #1a1a1a;
+$link-color: #10b981;
+
+/*-- scss:rules --*/
+
+/* Widen the main content column */
+.quarto-container {
+  max-width: 1400px !important;
+}
+
+#quarto-content {
+  max-width: 1400px !important;
+}
+
+/* The main article/body column - make it wider */
+.column-body,
+.column-page,
+article.content,
+div.quarto-body {
+  max-width: 1050px;
+}
+
+/* Override Cosmo's narrow defaults */
+@media (min-width: 992px) {
+  #quarto-content > * {
+    max-width: 1400px;
+  }
+  .quarto-sidebar ~ .quarto-sidebar-offset {
+    padding-left: 1rem;
+  }
+  /* Body text column width */
+  .column-body {
+    max-width: 1000px;
+  }
+}
+
+/* Plotly figures: allow them to use the full column width */
+.plotly,
+.js-plotly-plot {
+  width: 100% !important;
+}
+
+/* Bar chart specifically: ensure it does not clip */
+.plotly .svg-container {
+  overflow: visible !important;
+}
+
+/* Tables */
+table {
+  width: 100%;
+}
+
+/* Callouts */
+.callout {
+  margin-top: 1.2rem;
+  margin-bottom: 1.2rem;
+}
+
+/* Code blocks */
+div.sourceCode {
+  border-radius: 8px;
+}
+
+/* Heading spacing */
+h1, h2, h3, h4 {
+  margin-top: 2rem;
+}
+
+/* Blockquotes - green left bar */
+blockquote {
+  border-left: 4px solid #10b981;
+  padding-left: 1rem;
+  font-style: italic;
+  color: #374151;
+}

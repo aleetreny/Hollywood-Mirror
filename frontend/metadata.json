@@ -1,5 +1,0 @@
-{
-  "name": "Hollywood Mirror",
-  "description": "Find movies with a similar narrative style using text embeddings.",
-  "requestFramePermissions": []
-}

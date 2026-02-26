@@ -1,20 +1,35 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Hollywood Mirror - Frontend
 
-# Run and deploy your AI Studio app
+Este es el frontend del proyecto **Hollywood Mirror**, construido con [React](https://react.dev/) y [Vite](https://vitejs.dev/).
 
-This contains everything you need to run your app locally.
+## Requisitos Previos
 
-View your app in AI Studio: https://ai.studio/apps/3987d44e-32a3-4dd9-9dd1-cb06fcb038bf
+- [Node.js](https://nodejs.org/) instalado en tu sistema.
 
-## Run Locally
+## Cómo ejecutar el proyecto localmente
 
-**Prerequisites:**  Node.js
+Sigue estos pasos para levantar el entorno de desarrollo:
 
+1. **Instalar las dependencias:**
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+   ```bash
+   npm install
+   ```
+
+2. **Levantar el servidor de desarrollo:**
+
+   ```bash
+   npm run dev
+   ```
+
+3. **Abrir la aplicación:**
+   Una vez que el servidor esté corriendo, abre tu navegador y dirígete a:
+   [http://localhost:3000](http://localhost:3000)
+
+## Estructura de Scripts
+
+- `npm run dev`: Inicia el servidor de desarrollo utilizando Vite en el puerto 3000.
+- `npm run build`: Compila la aplicación para producción.
+- `npm run preview`: Permite previsualizar la compilación de producción localmente.
+- `npm run clean`: Elimina el directorio `dist` generado.
+- `npm run lint`: Ejecuta TypeScript para verificar errores de tipado sin emitir archivos.

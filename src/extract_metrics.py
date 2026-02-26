@@ -22,6 +22,7 @@ def extract_metrics():
     # 2. Lexical diversity (unique words ratio)
     # 3. Sentiment polarity (-1 to 1)
     # 4. Subjectivity (0 to 1)
+    # 5. Average sentence length (words per sentence)
     
     tqdm.pandas(desc="Calculating metrics")
     
@@ -52,9 +53,25 @@ def extract_metrics():
     sent_subj = df['cleaned_text'].progress_apply(get_sentiment_subj)
     df['sentiment'] = sent_subj.apply(lambda x: x[0])
     df['subjectivity'] = sent_subj.apply(lambda x: x[1])
+
+    # Average sentence length (Syntactic rhythm)
+    print("Computing Syntactic Rhythm...")
+    def get_avg_sentence_length(text):
+        if not isinstance(text, str):
+            return 0.0
+        # Simple heuristic split by period, question mark, or exclamation mark
+        import re
+        sentences = re.split(r'[.!?]+', text)
+        sentences = [s.strip() for s in sentences if s.strip()]
+        if not sentences:
+            return 0.0
+        words_per_sentence = [len(s.split()) for s in sentences]
+        return np.mean(words_per_sentence)
+        
+    df['avg_sentence_length'] = df['cleaned_text'].progress_apply(get_avg_sentence_length)
     
     # Save the metrics (dropping the huge text column)
-    metrics_df = df[['movie_title', 'word_count', 'lexical_diversity', 'sentiment', 'subjectivity']]
+    metrics_df = df[['movie_title', 'word_count', 'lexical_diversity', 'sentiment', 'subjectivity', 'avg_sentence_length']]
     metrics_df.to_csv(output_file, index=False)
     print(f"Saved extended metrics to {output_file}")
 
