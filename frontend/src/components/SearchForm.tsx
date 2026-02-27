@@ -12,6 +12,13 @@ export function SearchForm({ onSearch, isLoading }: SearchFormProps) {
   const [model, setModel] = useState<"mpnet" | "minilm">("mpnet");
   const [k, setK] = useState<number>(5);
   const [error, setError] = useState<string | null>(null);
+  const K_MIN = 1;
+  const K_MAX = 20;
+
+  const normalizeK = (value: number): number => {
+    if (!Number.isFinite(value)) return 5;
+    return Math.max(K_MIN, Math.min(K_MAX, Math.floor(value)));
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,7 +29,7 @@ export function SearchForm({ onSearch, isLoading }: SearchFormProps) {
       return;
     }
 
-    const clampedK = Math.max(1, Math.min(20, Math.floor(k)));
+    const clampedK = normalizeK(k);
     setK(clampedK);
 
     onSearch({ text: text.trim(), model, k: clampedK });
@@ -73,20 +80,20 @@ export function SearchForm({ onSearch, isLoading }: SearchFormProps) {
             <input
               type="range"
               id="k-slider"
-              min="1"
-              max="20"
+              min={K_MIN}
+              max={K_MAX}
               value={k}
-              onChange={(e) => setK(parseInt(e.target.value, 10))}
+              onChange={(e) => setK(normalizeK(Number(e.target.value)))}
               className="flex-1 accent-emerald-500"
               disabled={isLoading}
             />
             <input
               type="number"
               id="k"
-              min="1"
-              max="20"
+              min={K_MIN}
+              max={K_MAX}
               value={k}
-              onChange={(e) => setK(parseInt(e.target.value, 10))}
+              onChange={(e) => setK(normalizeK(Number(e.target.value)))}
               className="w-16 bg-zinc-950 border border-white/10 rounded-xl p-2 text-center text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all"
               disabled={isLoading}
             />

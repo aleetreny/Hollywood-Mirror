@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import logging
-from pathlib import Path
+import os
 from typing import Literal
 
 import numpy as np
@@ -12,6 +11,9 @@ from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 
 from src.embeddings import load_embeddings
+
+# App configuration
+app = FastAPI(title="Hollywood Mirror API", version="0.1.0")
 
 # Pydantic Schemas
 class SimilarMoviesRequest(BaseModel):
@@ -29,22 +31,34 @@ class SimilarMovie(BaseModel):
 class SimilarMoviesResponse(BaseModel):
     results: list[SimilarMovie]
 
-# App configuration
-app = FastAPI(title="Hollywood Mirror API", version="0.1.0")
+def _allowed_origins() -> list[str]:
+    """
+    Resolve CORS origins from env var `API_CORS_ORIGINS` (comma-separated)
+    or fall back to local frontend defaults.
+    """
+    raw = os.getenv("API_CORS_ORIGINS", "").strip()
+    if raw:
+        return [origin.strip() for origin in raw.split(",") if origin.strip()]
+    return [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
 
 # Allow CORS for local Vite dev server
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=_allowed_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # Global dictionaries to store our loaded artifacts
-MATRICES = {}
-TITLES_MAP = {}
-MODELS = {}
+MATRICES: dict[str, np.ndarray] = {}
+TITLES_MAP: dict[str, list[str]] = {}
+MODELS: dict[str, SentenceTransformer] = {}
 
 @app.on_event("startup")
 def _load_resources() -> None:
@@ -103,4 +117,3 @@ def similar_movies(payload: SimilarMoviesRequest) -> SimilarMoviesResponse:
         SimilarMovie(title=clean_title(titles[i]), affinity=float(sims[i])) for i in order
     ]
     return SimilarMoviesResponse(results=results)
-

@@ -1,1 +1,1 @@
-# Hollywood Mirror — módulos de parsing y embeddings
+# Hollywood Mirror: parsing and embeddings modules

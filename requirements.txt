@@ -1,26 +1,26 @@
-# Hollywood Mirror — dependencias
-# Python >= 3.9 recomendado
+# Hollywood Mirror: dependencies
+# Python >= 3.9 recommended
 
-# Datos y pipeline
+# Data and pipeline
 pandas>=2.0
 numpy>=1.24
 tqdm>=4.65
 
-# Embeddings (chunking + mean pooling; torch 2.2.x OK en macOS)
+# Embeddings (chunking + mean pooling; torch 2.2.x works on macOS)
 torch>=2.0
 sentence-transformers>=2.2,<3
 
-# Persistencia (matriz N×d: 768 con mpnet, 384 con minilm)
+# Persistence (Nxd matrix: 768 with mpnet, 384 with minilm)
 pyarrow>=12.0
 
-# Vía 1: Análisis Quarto (UMAP, visualización)
+# Route 1: Quarto analysis (UMAP, visualization)
 umap-learn>=0.5
 plotly>=5.15
 scikit-learn>=1.3
 
-# Vía 2: App Streamlit
-streamlit>=1.28
+# Classical NLP for lexical metrics
+textblob>=0.18
 
-# Vía 3: API backend (FastAPI)
+# Backend API (FastAPI)
 fastapi>=0.115
 uvicorn[standard]>=0.32

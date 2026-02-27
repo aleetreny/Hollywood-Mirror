@@ -1,7 +1,7 @@
 """
-Chunking por palabras (respetando límite del modelo), vectorización con Sentence Transformers
-y mean pooling por película. Función reutilizable por Quarto y por la app Streamlit.
-Output: matriz [N, dim] guardada en .npy + títulos en .txt (mismo orden).
+Word-based chunking (respecting model limits), Sentence Transformers vectorization,
+and mean pooling per movie. Reusable from Quarto and the web app.
+Output: matrix [N, dim] stored in .npy plus titles in .txt (same order).
 """
 
 from pathlib import Path
@@ -13,15 +13,15 @@ from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 
 
-# Modelos disponibles: (nombre_huggingface, chunk_size_en_palabras)
-# - minilm: 256 tokens max, 384 dims, rápido. Chunks ~200 palabras.
-# - mpnet:  384 tokens max, 768 dims, mejor calidad. Chunks ~300 palabras. Corre bien en CPU.
+# Available models: (huggingface_name, chunk_size_words)
+# - minilm: 256 tokens max, 384 dims, faster. Chunks ~200 words.
+# - mpnet:  384 tokens max, 768 dims, higher quality. Chunks ~300 words, works on CPU.
 MODEL_CONFIG = {
     "minilm": ("sentence-transformers/all-MiniLM-L6-v2", 200),
     "mpnet": ("sentence-transformers/all-mpnet-base-v2", 300),
 }
 DEFAULT_MODEL_ID = "mpnet"
-OVERLAP_FRAC = 0.10  # 10% overlap entre chunks
+OVERLAP_FRAC = 0.10  # 10% overlap between chunks
 
 
 def chunk_text(
@@ -30,8 +30,8 @@ def chunk_text(
     overlap_frac: float = OVERLAP_FRAC,
 ) -> list[str]:
     """
-    Divide un texto en bloques de ~chunk_size palabras con solapamiento overlap_frac
-    (ej. 0.1 = 10%). chunk_size debe caber en el modelo (minilm: 200, mpnet: 300).
+    Split text into ~chunk_size word chunks with overlap overlap_frac
+    (for example, 0.1 = 10%). chunk_size must fit model limits.
     """
     if not text or not str(text).strip():
         return []
@@ -57,8 +57,8 @@ def compute_movie_embedding(
     overlap_frac: float = OVERLAP_FRAC,
 ) -> np.ndarray:
     """
-    Chunking + encode + mean pooling para un solo texto (una película).
-    La dimensión del vector la da el modelo (384 o 768).
+    Chunk, encode, and mean-pool a single movie text.
+    Output embedding dimension is model-dependent (384 or 768).
     """
     chunks = chunk_text(text, chunk_size=chunk_size, overlap_frac=overlap_frac)
     if not chunks:
@@ -77,8 +77,8 @@ def build_embedding_matrix(
     model_id: str = DEFAULT_MODEL_ID,
 ) -> tuple[np.ndarray, list[str]]:
     """
-    Para cada fila del DataFrame: chunking + encode + mean pooling.
-    Devuelve (matrix, titles) con matrix de shape (N, dim) y titles en el mismo orden.
+    For each DataFrame row, perform chunking + encode + mean pooling.
+    Returns (matrix, titles) where matrix has shape (N, dim) and titles share row order.
     """
     if model is None:
         name, cs = MODEL_CONFIG.get(model_id, MODEL_CONFIG[DEFAULT_MODEL_ID])
@@ -104,21 +104,21 @@ def run(
     model_id: str = DEFAULT_MODEL_ID,
 ) -> tuple[np.ndarray, list[str]]:
     """
-    Lee el DataFrame limpio (parquet o csv), calcula la matriz de embeddings
-    y guarda matrix.npy + titles en .txt. Si los archivos ya existen y force=False, los carga.
+    Read cleaned DataFrame (parquet or csv), compute embedding matrix,
+    and save matrix.npy + titles.txt. If files exist and force=False, load them.
 
-    - model_id: "mpnet" (por defecto, 768 dims, chunks 300 palabras) o "minilm" (384 dims, 200 palabras).
+    - model_id: "mpnet" (default, 768 dims, 300-word chunks) or "minilm" (384 dims, 200-word chunks).
     - output_name:
-        - Si es None (por defecto), se usa "movie_embeddings_{model_id}".
-        - Si se pasa un nombre explícito, se usa ese prefijo.
+        - If None (default), use "movie_embeddings_{model_id}".
+        - If provided, use the explicit prefix.
 
-    Devuelve (matrix, titles).
+    Returns (matrix, titles).
     """
     repo_root = Path(__file__).resolve().parent.parent
     processed_dir = processed_dir or repo_root / "data" / "processed"
     base_in = processed_dir / input_name
 
-    # Nombre de salida dependiente del modelo si no se especifica
+    # Model-specific default output name.
     output_name = output_name or f"movie_embeddings_{model_id}"
     base_out = processed_dir / output_name
     path_npy = base_out.with_suffix(".npy")
@@ -135,7 +135,7 @@ def run(
     elif base_in.with_suffix(".csv").exists():
         df = pd.read_csv(base_in.with_suffix(".csv"), encoding="utf-8")
     else:
-        raise FileNotFoundError(f"No se encontró {base_in}.parquet ni {base_in}.csv")
+        raise FileNotFoundError(f"Could not find {base_in}.parquet or {base_in}.csv")
 
     model_name, chunk_size = MODEL_CONFIG.get(model_id, MODEL_CONFIG[DEFAULT_MODEL_ID])
     model = SentenceTransformer(model_name)
@@ -154,23 +154,23 @@ def load_embeddings(
     output_name: Optional[str] = None,
 ) -> tuple[np.ndarray, list[str]]:
     """
-    Carga la matriz y los títulos guardados (para uso en Quarto o en la API/web).
+    Load persisted matrix and titles (for Quarto or API/web usage).
 
-    - model_id: "mpnet" o "minilm". Por defecto, el mismo que se usa al generar embeddings.
+    - model_id: "mpnet" or "minilm". Default matches generation defaults.
     - output_name:
-        - Si es None (por defecto), se busca "movie_embeddings_{model_id}".
-        - Para compatibilidad hacia atrás, si no existe se intenta "movie_embeddings".
+        - If None (default), look for "movie_embeddings_{model_id}".
+        - For backward compatibility, fall back to "movie_embeddings".
     """
     repo_root = Path(__file__).resolve().parent.parent
     processed_dir = processed_dir or repo_root / "data" / "processed"
 
-    # Nombre base preferido
+    # Preferred base name.
     base_name = output_name or f"movie_embeddings_{model_id}"
     base = processed_dir / base_name
     path_npy = base.with_suffix(".npy")
     path_titles = base.with_suffix(".txt")
 
-    # Compatibilidad con nombres antiguos sin sufijo de modelo
+    # Backward compatibility with legacy base name (without model suffix).
     if not path_npy.exists() or not path_titles.exists():
         legacy_base = processed_dir / "movie_embeddings"
         legacy_npy = legacy_base.with_suffix(".npy")
@@ -180,8 +180,8 @@ def load_embeddings(
             path_titles = legacy_txt
         else:
             raise FileNotFoundError(
-                f"Ejecuta antes: python -m src.embeddings "
-                f"(no se encontró {base}.* ni movie_embeddings.*)"
+                f"Run first: python -m src.embeddings "
+                f"(could not find {base}.* or movie_embeddings.*)"
             )
     matrix = np.load(path_npy, allow_pickle=False)
     titles = path_titles.read_text(encoding="utf-8").strip().split("\n")
@@ -192,10 +192,10 @@ if __name__ == "__main__":
     import sys
     model_id = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_MODEL_ID
     if model_id not in MODEL_CONFIG:
-        print(f"Uso: python -m src.embeddings [mpnet|minilm]  (por defecto: mpnet)")
+        print("Usage: python -m src.embeddings [mpnet|minilm]  (default: mpnet)")
         sys.exit(1)
     matrix, titles = run(model_id=model_id)
     print(
-        f"Listo: matriz {matrix.shape} ({model_id}) y {len(titles)} títulos → "
+        f"Done: matrix {matrix.shape} ({model_id}) and {len(titles)} titles -> "
         f"data/processed/movie_embeddings_{model_id}.npy/.txt"
     )

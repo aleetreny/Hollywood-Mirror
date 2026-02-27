@@ -1,35 +1,38 @@
-# Hollywood Mirror - Frontend
+# Hollywood Mirror Frontend
 
-Este es el frontend del proyecto **Hollywood Mirror**, construido con [React](https://react.dev/) y [Vite](https://vitejs.dev/).
+React + Vite frontend for semantic similarity search against the Hollywood Mirror API.
 
-## Requisitos Previos
+## Requirements
 
-- [Node.js](https://nodejs.org/) instalado en tu sistema.
+- Node.js 20 or newer.
 
-## Cómo ejecutar el proyecto localmente
+## Setup
 
-Sigue estos pasos para levantar el entorno de desarrollo:
+1. Install dependencies:
 
-1. **Instalar las dependencias:**
+```bash
+npm install
+```
 
-   ```bash
-   npm install
-   ```
+2. Create environment variables:
 
-2. **Levantar el servidor de desarrollo:**
+```bash
+cp .env.example .env
+```
 
-   ```bash
-   npm run dev
-   ```
+3. Update `VITE_API_BASE_URL` in `.env` if your backend is not running at `http://localhost:8000`.
 
-3. **Abrir la aplicación:**
-   Una vez que el servidor esté corriendo, abre tu navegador y dirígete a:
-   [http://localhost:3000](http://localhost:3000)
+## Development
 
-## Estructura de Scripts
+```bash
+npm run dev
+```
 
-- `npm run dev`: Inicia el servidor de desarrollo utilizando Vite en el puerto 3000.
-- `npm run build`: Compila la aplicación para producción.
-- `npm run preview`: Permite previsualizar la compilación de producción localmente.
-- `npm run clean`: Elimina el directorio `dist` generado.
-- `npm run lint`: Ejecuta TypeScript para verificar errores de tipado sin emitir archivos.
+Local server runs at `http://localhost:3000`.
+
+## Quality and build
+
+- `npm run lint`: TypeScript type-check.
+- `npm run build`: production build with Vite.
+- `npm run preview`: local preview of the production build.
+- `npm run clean`: remove `dist/`.

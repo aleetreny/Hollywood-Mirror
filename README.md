@@ -1,78 +1,168 @@
 # Hollywood Mirror
 
-Sistema de análisis de datos cinematográficos con **NLP** y **embeddings** que mapea el estilo narrativo de ~2.600 películas a partir de guiones anotados.
+Hollywood Mirror is a cinematic analysis project built on NLP and semantic embeddings. It includes a Python data pipeline, a FastAPI backend, a React/Vite frontend, and a Quarto report.
 
-## Productos
+## What is included
 
-1. **Exploración científica (Quarto)** — Reducción de dimensionalidad (UMAP), visualización de la “Galaxia del Cine” y análisis de clusters sobre el espacio latente de películas.
-2. **Producto de software (Web App)** — Frontend React/Vite + API FastAPI: el usuario pega un texto y obtiene el Top‑K de películas más similares según embeddings.
+1. Scientific analysis in Quarto (`analysis/galaxia.qmd`) with UMAP projections, clustering, and editorial interpretation.
+2. A semantic search web app where users submit free text and get Top-K similar movies.
+3. A reproducible pipeline for script parsing, NLP metrics extraction, and embedding generation.
 
-## Base de datos
+## Repository structure
 
-**`data/raw/`** — Base de datos del proyecto: **un JSON por película** (~2.600 archivos). Cada JSON contiene escenas con bloques (`head_type`, `text`, `head_text`). El pipeline lee directamente esta carpeta.
-
-## Estructura del repositorio
-
-```
+```text
 Hollywood Mirror/
-├── context.md              # Especificación del proyecto (en español)
 ├── README.md
 ├── requirements.txt
 ├── data/
-│   ├── raw/                # Base de datos: 1 JSON por película (escenas → bloques)
-│   └── processed/          # DataFrame limpio + embeddings (.parquet, .npy, .txt)  [NO en git]
-├── src/                    # Backend / pipeline en Python
-│   ├── parsing.py          # Extracción y limpieza desde JSON → DataFrame [movie_title, cleaned_text]
-│   ├── embeddings.py       # Chunking, vectorización (Sentence Transformers), mean pooling
-│   ├── api.py              # API FastAPI: /api/similar-movies (Top‑K películas similares)
-│   └── utils.py            # Utilidades varias
-├── analysis/               # Documento Quarto (UMAP, Plotly, clusters, conclusiones)
-└── frontend/               # Web app React/Vite generada con Google AI Studio
+│   ├── raw/                        # Local screenplay JSON files (not committed)
+│   ├── metadata/                   # Local metadata CSV files (not committed)
+│   └── processed/                  # Mixed: committed embedding files + local generated artifacts
+├── src/
+│   ├── parsing.py                  # JSON -> movies_cleaned.{parquet,csv}
+│   ├── extract_metrics.py          # NLP metrics -> movie_metrics.csv
+│   ├── embeddings.py               # mpnet/minilm embeddings -> .npy + .txt
+│   ├── precompute.py               # merge + UMAP -> galaxia_precalc.parquet
+│   └── api.py                      # endpoint POST /api/similar-movies
+├── analysis/
+│   ├── galaxia.qmd
+│   ├── custom.scss
+│   └── _quarto.yml
+└── frontend/
     ├── package.json
-    └── src/…               # Componentes de UI y cliente HTTP (Vite)
+    ├── .env.example
+    └── src/
 ```
 
-## Pipeline de datos
+## Requirements
 
-1. **Parsing:** Extraer `text` de bloques con `head_type` `heading` o `speaker`/`title`; ignorar `transition`. Salida: DataFrame `[movie_title, cleaned_text]`.
-2. **Embeddings:** Chunking (tamaño según modelo) → modelo Sentence Transformers (`all-mpnet-base-v2` por defecto, 768 dims; alternativa `all-MiniLM-L6-v2`, 384 dims) → mean pooling por película → matriz `movie_embeddings.npy` + títulos en `movie_embeddings.txt`. Si ya existen y `force=False`, no se regeneran.
+- Python 3.10 or newer.
+- Node.js 20 or newer.
+- Quarto CLI, only required to render the report.
 
-## Uso rápido
+Base Python setup:
 
 ```bash
-# Entorno (ejemplo con conda; también puedes usar venv)
-conda create -n hollywood python=3.11 -y
-conda activate hollywood
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
+```
 
-# 1) Limpieza de datos (JSON → DataFrame):
+## Data source
+
+Primary dataset:
+
+- Kaggle `gufukuro/movie-scripts-corpus`:
+  https://www.kaggle.com/datasets/gufukuro/movie-scripts-corpus?resource=download
+
+Git tracking in this repository is intentionally selective:
+
+- `data/raw/` is ignored (`data/raw/` in `.gitignore`) and is not committed.
+- `data/metadata/` is effectively local-only because `*.csv` is ignored globally.
+- `data/processed/` is partially committed.
+  - Committed now: `movie_embeddings_mpnet.npy`, `movie_embeddings_mpnet.txt`,
+    `movie_embeddings_minilm.npy`, `movie_embeddings_minilm.txt`.
+  - Local-only by ignore rules: generated `*.csv` and `*.parquet` files such as
+    `movies_cleaned.csv`, `movies_cleaned.parquet`, `movie_metrics.csv`, and
+    `galaxia_precalc.parquet`.
+
+From the Kaggle dataset, this project uses the `movie_metadata` subset, especially:
+
+- `movie_meta_data.csv` (required by current pipeline)
+- `screenplay_awards.csv` (optional, useful for extra analysis)
+
+Example using `kagglehub`:
+
+```python
+# pip install kagglehub[pandas-datasets] pandas
+import kagglehub
+from kagglehub import KaggleDatasetAdapter
+
+meta = kagglehub.load_dataset(
+    KaggleDatasetAdapter.PANDAS,
+    "gufukuro/movie-scripts-corpus",
+    "movie_metadata/movie_meta_data.csv",
+)
+
+awards = kagglehub.load_dataset(
+    KaggleDatasetAdapter.PANDAS,
+    "gufukuro/movie-scripts-corpus",
+    "movie_metadata/screenplay_awards.csv",
+)
+
+meta.to_csv("data/metadata/movie_meta_data.csv", index=False)
+awards.to_csv("data/metadata/screenplay_awards.csv", index=False)
+```
+
+Also place screenplay JSON files from the same Kaggle dataset under `data/raw/`.
+
+## Data pipeline
+
+```bash
+# 1) Parse screenplay JSON files
 python -m src.parsing
 
-# 2) Embeddings
-# mpnet (768 dims, más calidad; requiere máquina algo potente):
+# 2) Compute NLP metrics
+python -m src.extract_metrics
+
+# 3) Build embeddings (both models supported by the API)
 python -m src.embeddings mpnet
-# o bien, alternativa más ligera:
 python -m src.embeddings minilm
 
-# 3) API backend (FastAPI)
-uvicorn src.api:app --reload --port 8000
+# 4) Build precomputed dataset for Quarto
+python -m src.precompute
+```
 
-# 4) Web frontend (Vite) – desde la carpeta frontend/
+Expected artifacts in `data/processed/`:
+
+- `movies_cleaned.parquet` and `movies_cleaned.csv`
+- `movie_metrics.csv`
+- `movie_embeddings_mpnet.npy` and `movie_embeddings_mpnet.txt`
+- `movie_embeddings_minilm.npy` and `movie_embeddings_minilm.txt`
+- `galaxia_precalc.parquet`
+
+Commit status note:
+
+- Committed: the two embedding pairs (`*.npy` + `*.txt`).
+- Ignored by `.gitignore`: generated `*.csv` and `*.parquet` artifacts.
+
+## Backend API
+
+```bash
+uvicorn src.api:app --reload --port 8000
+```
+
+Main endpoint:
+
+- `POST /api/similar-movies`
+- Body JSON:
+  - `text`: string
+  - `model`: `mpnet` or `minilm`
+  - `k`: integer (1-50)
+
+## Frontend
+
+```bash
 cd frontend
 npm install
-echo 'VITE_API_BASE_URL=http://localhost:8000' > .env
+cp .env.example .env
 npm run dev
 ```
 
-Para el análisis Quarto:
+Environment variable:
+
+- `VITE_API_BASE_URL`, default is `http://localhost:8000`.
+
+Useful commands:
+
+- `npm run lint`
+- `npm run build`
+
+## Quarto report
 
 ```bash
 cd analysis
 quarto render galaxia.qmd
 ```
 
-## Requerimientos técnicos
-
-- **Progreso:** `tqdm` en procesamiento masivo.
-- **Persistencia:** Guardar estados intermedios; no regenerar embeddings en cada ejecución.
-- **Modularidad:** La generación de embeddings es una función independiente usada por Quarto, la API y la web.
+HTML output is written to `analysis/_site/`.

@@ -54,12 +54,14 @@ export function ResultsTable({ results, isLoading, error }: ResultsTableProps) {
       </div>
       <div className="divide-y divide-white/5">
         {results.map((result, index) => {
-          const affinityPercent = (result.affinity * 100).toFixed(1);
+          const affinity = Number.isFinite(result.affinity) ? result.affinity : 0;
+          const affinityPercent = (affinity * 100).toFixed(1);
+          const affinityBar = `${Math.max(0, Math.min(100, affinity * 100))}%`;
           // Clean up the title if it has an ID appended like "Inception_1375666"
           const displayTitle = result.title.replace(/_\d+$/, '').replace(/_/g, ' ');
           
           return (
-            <div key={index} className="px-6 py-4 flex items-center justify-between hover:bg-white/5 transition-colors">
+            <div key={`${result.title}-${index}`} className="px-6 py-4 flex items-center justify-between hover:bg-white/5 transition-colors">
               <div className="flex items-center gap-4">
                 <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center text-xs font-bold text-zinc-400 border border-white/5">
                   {index + 1}
@@ -70,7 +72,7 @@ export function ResultsTable({ results, isLoading, error }: ResultsTableProps) {
                 <div className="w-24 h-2 bg-zinc-800 rounded-full overflow-hidden hidden sm:block">
                   <div 
                     className="h-full bg-emerald-500 rounded-full" 
-                    style={{ width: `${affinityPercent}%` }}
+                    style={{ width: affinityBar }}
                   />
                 </div>
                 <span className="font-mono text-emerald-400 font-medium w-16 text-right">

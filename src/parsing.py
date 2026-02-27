@@ -1,9 +1,9 @@
 """
-Extracción y limpieza de texto desde los JSON en data/raw/.
-Output: DataFrame con columnas [movie_title, cleaned_text].
+Extract and clean text from screenplay JSON files in data/raw/.
+Output: DataFrame with columns [movie_title, cleaned_text].
 
-Solo se extraen bloques con head_type 'heading' o 'speaker/title';
-se ignoran 'transition'.
+Only blocks with head_type 'heading' or 'speaker/title' are kept;
+'transition' blocks are ignored.
 """
 
 import json
@@ -15,30 +15,30 @@ import pandas as pd
 from tqdm import tqdm
 
 
-# Tipos de bloque que nos interesan (transición se ignora)
+# Block types we keep ('transition' is excluded).
 KEEP_HEAD_TYPES = {"heading", "speaker/title"}
 
 
 def _clean_fragment(text: str) -> str:
-    """Limpia un fragmento de texto: normaliza espacios y caracteres innecesarios."""
+    """Clean a text fragment by normalizing whitespace and control characters."""
     if not text or not isinstance(text, str):
         return ""
-    # Normalizar espacios (incl. tabs, múltiples espacios)
+    # Normalize whitespace (tabs, repeated spaces, etc.).
     text = re.sub(r"\s+", " ", text)
-    # Eliminar caracteres de control
+    # Drop control characters except newlines and tabs.
     text = "".join(c for c in text if ord(c) >= 32 or c in "\n\t")
     return text.strip()
 
 
-def extract_text_from_file(path: Path) -> tuple[str, str]:
+def extract_text_from_file(path: Path, encoding: str = "utf-8") -> tuple[str, str]:
     """
-    Lee un JSON de película y devuelve (movie_title, cleaned_text).
+    Read one movie JSON and return (movie_title, cleaned_text).
 
-    - movie_title: nombre del archivo sin extensión ni ID (ej. "About Time_2194499" -> "About Time").
-    - cleaned_text: concatenación de todos los `text` de bloques con head_type
-      en KEEP_HEAD_TYPES, limpios y separados por espacio.
+    - movie_title: filename stem (for example, "About Time_2194499").
+    - cleaned_text: all `text` values from blocks with head_type in
+      KEEP_HEAD_TYPES, cleaned and joined by spaces.
     """
-    raw = path.read_text(encoding="utf-8")
+    raw = path.read_text(encoding=encoding)
     data = json.loads(raw)
 
     fragments: list[str] = []
@@ -54,9 +54,8 @@ def extract_text_from_file(path: Path) -> tuple[str, str]:
             if t:
                 fragments.append(_clean_fragment(t))
 
-    # Título: quitar .json; opcionalmente quitar sufijo _IMDBID para nombre "limpio"
+    # Keep filename stem so title+imdbid mapping stays stable.
     stem = path.stem
-    # Formato típico: "Movie Title_1234567" -> dejamos el stem completo para identificar
     movie_title = stem
 
     cleaned_text = " ".join(f for f in fragments if f)
@@ -70,17 +69,17 @@ def parse_raw_to_dataframe(
     encoding: str = "utf-8",
 ) -> pd.DataFrame:
     """
-    Itera sobre todos los JSON en raw_dir, extrae y limpia el texto,
-    y devuelve un DataFrame con columnas [movie_title, cleaned_text].
+    Iterate over all JSON files in raw_dir, extract and clean text,
+    and return a DataFrame with columns [movie_title, cleaned_text].
     """
     paths = sorted(raw_dir.glob(pattern))
     rows = []
     for path in tqdm(paths, desc="Parsing JSONs"):
         try:
-            title, text = extract_text_from_file(path)
+            title, text = extract_text_from_file(path, encoding=encoding)
             rows.append({"movie_title": title, "cleaned_text": text})
         except Exception as e:
-            tqdm.write(f"Error en {path.name}: {e}")
+            tqdm.write(f"Error in {path.name}: {e}")
             continue
 
     return pd.DataFrame(rows)
@@ -92,13 +91,13 @@ def run(
     output_name: str = "movies_cleaned",
 ) -> pd.DataFrame:
     """
-    Ejecuta el pipeline de parsing: lee data/raw/, escribe en data/processed/.
+    Run parsing pipeline: read data/raw/, write to data/processed/.
 
-    - raw_dir: carpeta con JSON (por defecto data/raw respecto al repo).
-    - processed_dir: carpeta de salida (por defecto data/processed).
-    - output_name: nombre base del archivo (se guarda .parquet y .csv).
+    - raw_dir: directory with JSON files (default: repo/data/raw).
+    - processed_dir: output directory (default: repo/data/processed).
+    - output_name: output basename (.parquet and .csv are written).
 
-    Devuelve el DataFrame generado.
+    Returns the generated DataFrame.
     """
     repo_root = Path(__file__).resolve().parent.parent
     raw_dir = raw_dir or repo_root / "data" / "raw"
@@ -114,4 +113,4 @@ def run(
 
 if __name__ == "__main__":
     df = run()
-    print(f"Listo: {len(df)} películas → data/processed/movies_cleaned.parquet y .csv")
+    print(f"Done: {len(df)} movies -> data/processed/movies_cleaned.parquet and .csv")
