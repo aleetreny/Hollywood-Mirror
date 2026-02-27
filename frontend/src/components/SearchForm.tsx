@@ -9,7 +9,7 @@ interface SearchFormProps {
 
 export function SearchForm({ onSearch, isLoading }: SearchFormProps) {
   const [text, setText] = useState("");
-  const [model, setModel] = useState<"mpnet" | "minilm">("mpnet");
+  const [model, setModel] = useState<"mpnet" | "minilm">("minilm");
   const [k, setK] = useState<number>(5);
   const [error, setError] = useState<string | null>(null);
   const K_MIN = 1;
@@ -67,8 +67,8 @@ export function SearchForm({ onSearch, isLoading }: SearchFormProps) {
             className="w-full bg-zinc-950 border border-white/10 rounded-xl p-3 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all appearance-none"
             disabled={isLoading}
           >
-            <option value="mpnet">mpnet (all-mpnet-base-v2)</option>
             <option value="minilm">minilm (all-MiniLM-L6-v2)</option>
+            <option value="mpnet">mpnet (all-mpnet-base-v2)</option>
           </select>
         </div>
 

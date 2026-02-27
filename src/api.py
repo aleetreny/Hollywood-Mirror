@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import threading
 from typing import Literal
 
 import numpy as np
@@ -19,7 +20,7 @@ app = FastAPI(title="Hollywood Mirror API", version="0.1.0")
 class SimilarMoviesRequest(BaseModel):
     text: str = Field(..., min_length=1, description="User-provided script fragment or idea.")
     model: Literal["mpnet", "minilm"] = Field(
-        "mpnet",
+        "minilm",
         description="Embedding model used for the backend matrix.",
     )
     k: int = Field(5, ge=1, le=50, description="Number of similar movies to return.")
@@ -59,25 +60,61 @@ app.add_middleware(
 MATRICES: dict[str, np.ndarray] = {}
 TITLES_MAP: dict[str, list[str]] = {}
 MODELS: dict[str, SentenceTransformer] = {}
+MODEL_NAMES = {
+    "mpnet": "sentence-transformers/all-mpnet-base-v2",
+    "minilm": "sentence-transformers/all-MiniLM-L6-v2",
+}
+MODEL_LOAD_LOCKS = {model_id: threading.Lock() for model_id in MODEL_NAMES}
+
+
+def _ensure_resources_loaded(model_id: Literal["mpnet", "minilm"]) -> None:
+    """
+    Lazily load embeddings and model artifacts for the requested model id.
+    """
+    if model_id in MATRICES and model_id in MODELS and model_id in TITLES_MAP:
+        return
+
+    with MODEL_LOAD_LOCKS[model_id]:
+        # Double check after acquiring the lock.
+        if model_id in MATRICES and model_id in MODELS and model_id in TITLES_MAP:
+            return
+
+        matrix, titles = load_embeddings(model_id=model_id)
+        MATRICES[model_id] = matrix.astype(np.float32)
+        TITLES_MAP[model_id] = titles
+        MODELS[model_id] = SentenceTransformer(MODEL_NAMES[model_id])
 
 @app.on_event("startup")
 def _load_resources() -> None:
     """
-    Load embedding matrices, titles, and Sentence Transformers models for both supported model types.
+    Optionally preload models declared in API_PRELOAD_MODELS.
+    Example: API_PRELOAD_MODELS=minilm,mpnet
     """
-    for model_id, model_name in [("mpnet", "sentence-transformers/all-mpnet-base-v2"), 
-                                 ("minilm", "sentence-transformers/all-MiniLM-L6-v2")]:
+    raw = os.getenv("API_PRELOAD_MODELS", "").strip()
+    preload_models = [model_id.strip() for model_id in raw.split(",") if model_id.strip()]
+
+    for model_id in preload_models:
+        if model_id not in MODEL_NAMES:
+            print(f"Warning: unknown model in API_PRELOAD_MODELS: '{model_id}'")
+            continue
         try:
-            print(f"Loading matrix and titles for {model_id}...")
-            matrix, titles = load_embeddings(model_id=model_id)
-            MATRICES[model_id] = matrix.astype(np.float32)
-            TITLES_MAP[model_id] = titles
-            
-            print(f"Loading SentenceTransformer '{model_name}' into RAM...")
-            MODELS[model_id] = SentenceTransformer(model_name)
-            
+            print(f"Preloading resources for {model_id}...")
+            _ensure_resources_loaded(model_id)
         except FileNotFoundError:
-            print(f"Warning: Embeddings for {model_id} not found in data/processed/. Search for this model will fail.")
+            print(
+                f"Warning: embeddings for {model_id} were not found in data/processed/. "
+                "Requests for this model will fail until files are available."
+            )
+        except Exception as exc:
+            print(f"Warning: failed preloading {model_id}: {exc}")
+
+
+@app.get("/healthz")
+def healthz() -> dict[str, object]:
+    return {
+        "status": "ok",
+        "loaded_models": sorted(MODELS.keys()),
+    }
 
 @app.post("/api/similar-movies", response_model=SimilarMoviesResponse)
 def similar_movies(payload: SimilarMoviesRequest) -> SimilarMoviesResponse:
@@ -85,12 +122,21 @@ def similar_movies(payload: SimilarMoviesRequest) -> SimilarMoviesResponse:
         raise HTTPException(status_code=400, detail="Text must not be empty.")
 
     req_model = payload.model
-    if req_model not in MATRICES or req_model not in MODELS:
+    try:
+        _ensure_resources_loaded(req_model)
+    except FileNotFoundError:
         raise HTTPException(
-            status_code=400,
-            detail=f"The requested model '{req_model}' is not currently loaded in the backend. "
-            f"Please run `python -m src.embeddings {req_model}` first and restart the server.",
-        )
+            status_code=503,
+            detail=(
+                f"Embeddings for model '{req_model}' were not found. "
+                f"Generate them with `python -m src.embeddings {req_model}` and redeploy."
+            ),
+        ) from None
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Backend failed to load model '{req_model}': {exc}",
+        ) from None
 
     # Route request to correct matrix and transformer model
     matrix = MATRICES[req_model]
