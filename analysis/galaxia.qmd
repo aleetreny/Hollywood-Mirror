@@ -1111,7 +1111,7 @@ The single most striking economic finding is the **strong negative correlation b
 
 This makes immediate intuitive sense once we recall what Chapters 2 and 3 told us:
 
-- The **lower** latitudes of the galaxy are dominated by Action, Adventure, and Crime — genres with expensive practical effects, large stunt casts, and massive marketing spends.
+- The **lower** latitudes of the galaxy are dominated by Action, Adventure, and Crime, genres with expensive practical effects, large stunt casts, and massive marketing spends.
 - The **upper** latitudes are dominated by Comedy, Drama, and Biography, while Animation occupies a more compact niche. Comedies, dramas, and biographies are among the cheapest major genres to produce.
 - Sentiment also stratifies along the same axis: emotionally negative films (action, war) sit south; emotionally warm films (comedy, family animation) sit north.
 
@@ -1218,9 +1218,9 @@ fig.update_layout(
 fig.show()
 ```
 
-Biography leads all genres with a mean IMDb rating of **6.81** — the highest of any category. This reflects a selection effect: studios greenlight biographical scripts about figures interesting enough to sustain an audience, and mediocre biopics rarely get made. Animation follows at **6.68**, driven by Pixar's and Studio Ghibli's exceptional quality floors. Drama (6.62) and Crime (6.65) also perform well.
+Biography leads all genres with a mean IMDb rating of **6.81**, the highest of any category. This reflects a selection effect: studios greenlight biographical scripts about figures interesting enough to sustain an audience, and mediocre biopics rarely get made. Animation follows at **6.68**, driven by Pixar's and Studio Ghibli's exceptional quality floors. Drama (6.62) and Crime (6.65) also perform well.
 
-**Horror** has the lowest mean rating of any genre at **5.51** — more than a full point below Biography. This is consistent with the genre's economics: horror is cheap to produce, so the quality floor is lower, and many low-budget films enter the corpus with marginal production values. Action is the second weakest at **6.23**, despite receiving some of the largest live-action production budgets.
+**Horror** has the lowest mean rating of any genre at **5.51**, more than a full point below Biography. This is consistent with the genre's economics: horror is cheap to produce, so the quality floor is lower, and many low-budget films enter the corpus with marginal production values. Action is the second weakest at **6.23**, despite receiving some of the largest live-action production budgets.
 
 
 ## Budget vs. Quality: The Great Decoupling
@@ -1241,7 +1241,7 @@ The cheapest fifth of Hollywood productions *outrates* the most expensive fifth 
 
 ```{python}
 #| label: fig-budget-quality
-#| fig-cap: "Left: IMDb rating distribution by budget quintile — cheaper films rate higher on average. Right: Genre-level mean budget vs. mean IMDb rating, where bubble size encodes corpus volume. Animation has the highest mean budget (~$94M), while Biography leads in mean IMDb with far lower spend."
+#| fig-cap: "Left: IMDb rating distribution by budget quintile, cheaper films rate higher on average. Right: Genre-level mean budget vs. mean IMDb rating, where bubble size encodes corpus volume. Animation has the highest mean budget (~$94M), while Biography leads in mean IMDb with far lower spend."
 
 bd = meta.dropna(subset=["budget_usd", "imdb_rating"]).copy()
 bd["budget_q"] = pd.qcut(bd["budget_usd"], 5,
@@ -1326,9 +1326,9 @@ The core framework can be stated concisely. The latent space constructed by MPNe
 ::: {.callout-important appearance="simple"}
 ## The Two Axes of the Galaxy
 
-**Axis X (horizontal)** — encodes **genre type**: a broad separation between action-adventure and drama-comedy narrative families. It is largely orthogonal to the four NLP surface metrics, to budget, and to quality. Genre is the primary organising principle, and it is not reducible to simple textual statistics.
+**Axis X (horizontal)** encodes **genre type**: a broad separation between action-adventure and drama-comedy narrative families. It is largely orthogonal to the four NLP surface metrics, to budget, and to quality. Genre is the primary organising principle, and it is not reducible to simple textual statistics.
 
-**Axis Y (vertical)** — encodes **narrative temperature**: the composite signature of emotional warmth ($r = +0.37$ with sentiment), opinionated voice ($r = +0.31$ with subjectivity), and low cost ($r = -0.38$ with budget). Films that score high on all three axes float north; expensive, tonally neutral, plot-heavy films sink south.
+**Axis Y (vertical)** encodes **narrative temperature**: the composite signature of emotional warmth ($r = +0.37$ with sentiment), opinionated voice ($r = +0.31$ with subjectivity), and low cost ($r = -0.38$ with budget). Films that score high on all three axes float north; expensive, tonally neutral, plot-heavy films sink south.
 :::
 
 ## The Genre Genome: A Radar Portrait
@@ -1337,7 +1337,7 @@ To make this unified picture tangible, we construct a six-dimensional **genome r
 
 ```{python}
 #| label: fig-genre-radar
-#| fig-cap: "Genre genome radar: each polygon is a genre's normalised fingerprint across six dimensions. The shapes are highly distinctive — Animation's diamond, Horror's flat disc, Biography's pentagon."
+#| fig-cap: "Genre genome radar: each polygon is a genre's normalised fingerprint across six dimensions. The shapes are highly distinctive; Animation's diamond, Horror's flat disc, Biography's pentagon."
 
 focus_g = ["Action","Animation","Biography","Comedy","Crime","Drama","Horror"]
 metric_cols_r = ["word_count","lexical_diversity","sentiment","subjectivity","imdb_rating","budget_usd"]
@@ -1389,7 +1389,7 @@ The genre genomes are highly distinctive. Reading the shapes:
 
 - **Horror** (pink) produces the flattest polygon of all, near-zero on every dimension: the shortest scripts, the most negative sentiment, the lowest IMDb ratings, and the smallest budgets. Horror is the genre of *extremes in reverse*, minimalist in every measurable sense.
 - **Animation** (orange) is a near-perfect diamond: it scores among the highest on lexical diversity, sentiment, subjectivity, IMDb rating *and* budget. It is uniquely expensive and uniquely warm, the genre with the highest investment and a correspondingly high quality floor.
-- **Biography** (purple) is tallest on sentiment (1.0 — by definition the most positive genre mean) and IMDb (1.0), yet its budget polygon is low (0.21). This is the genre that achieves the most with the least.
+- **Biography** (purple) is tallest on sentiment (1.0, by definition the most positive genre mean) and IMDb (1.0), yet its budget polygon is low (0.21). This is the genre that achieves the most with the least.
 - **Crime** (green) scores maximum on word count (1.0) and IMDb (0.88) but minimum on subjectivity (0.00): Crime scripts are the longest, among the best-rated, but the least opinionated. They are lean, objective, narrative machines.
 - **Action** (red) is the mirror image of Horror in wealth: high budget, high word count and lexical diversity, but low sentiment and low IMDb. It is the genre of *expensive mediocrity*.
 
@@ -1433,7 +1433,7 @@ fig.show()
 Three structural facts leap out of the matrix:
 
 1. **IMDb ↔ Metacritic: $r = 0.70$.** Audience scores and critic scores are strongly correlated, confirming a general quality signal shared across both populations.
-2. **Budget ↔ UMAP y: $r = -0.38$.** Budget is the strongest single predictor of a film's vertical coordinate after sentiment — and it correlates *negatively*, pulling high-spend films southward. This is larger than any NLP metric except sentiment itself.
+2. **Budget ↔ UMAP y: $r = -0.38$.** Budget is the strongest single predictor of a film's vertical coordinate after sentiment, and it correlates *negatively*, pulling high-spend films southward. This is larger than any NLP metric except sentiment itself.
 3. **Word count ↔ Lexical diversity: $r = -0.55$.** Longer scripts have lower vocabulary diversity: a robust version of Herdan's Law applied to screenwriting. The more you write, the more you repeat yourself.
 
 ## A Composite Map of Cinematic Value
@@ -1483,7 +1483,7 @@ fig.update_layout(
 fig.show()
 ```
 
-The composite map reveals a concentration of high-value films in the **upper and upper-left quadrant** of the galaxy: the territory of critically acclaimed, emotionally warm, lower-budget drama and crime films. The canonical examples — *Taxi Driver* (composite index: 0.74), *Singin' in the Rain* (0.74), *All About Eve* (0.74), *Donnie Darko* (0.73), *Before Sunrise* (0.73) — cluster clearly in this region. At the opposite extreme, the deep red points are almost exclusively high-budget Action films with poor critical reception, including *Ghost Rider*, *Eragon*, *Resident Evil Afterlife*, *Conan the Barbarian*, and *xXx*.
+The composite map reveals a concentration of high-value films in the **upper and upper-left quadrant** of the galaxy: the territory of critically acclaimed, emotionally warm, lower-budget drama and crime films. The canonical examples, *Taxi Driver* (composite index: 0.74), *Singin' in the Rain* (0.74), *All About Eve* (0.74), *Donnie Darko* (0.73), *Before Sunrise* (0.73), cluster clearly in this region. At the opposite extreme, the deep red points are almost exclusively high-budget Action films with poor critical reception, including *Ghost Rider*, *Eragon*, *Resident Evil Afterlife*, *Conan the Barbarian*, and *xXx*.
 
 The galaxy is not just a map of *what* Hollywood makes. It is a map of *where value lives*.
 
@@ -1537,11 +1537,11 @@ The violin plot shows that **Horror is the most conformist genre among the major
 
 ## The Absolute Outliers vs. The Pure Clones
 
-Let us inspect the extreme tails of the Isolation distribution. First, we look at the films with the absolute *highest* Isolation scores — the most structurally unique scripts in the 2,612-film corpus. And then, we flip the metric to find the films with the absolute *lowest* Isolation scores — the most structurally identical, conformist scripts ever produced.
+Let us inspect the extreme tails of the Isolation distribution. First, we look at the films with the absolute *highest* Isolation scores, the most structurally unique scripts in the 2,612-film corpus. And then, we flip the metric to find the films with the absolute *lowest* Isolation scores, the most structurally identical, conformist scripts ever produced.
 
 ```{python}
-#| label: fig-isolation-tails
-#| fig-cap: "Isolation tails in embedding space: top five most isolated scripts versus top five most conformist scripts."
+#| label: tbl-isolation-tails
+#| tbl-cap: "Isolation tails in embedding space: top five most isolated scripts versus top five most conformist scripts."
 #| output: asis
 
 iso_table_df = meta.copy()
@@ -1603,11 +1603,7 @@ print("::::")
 
 ```
 
-The upper tail highlights genuinely atypical scripts.
-
-In this corpus snapshot, Velvet Buzzsaw, Shrek the Third, The Disaster Artist, and The Damned United all appear among the strongest outliers.
-
-The lower tail is dominated by **Harry Potter** entries, indicating exceptionally tight semantic similarity within that franchise. In this dataset, those films form one of the strongest micro-clusters in the full embedding space.
+The left column (*Top 5 Most Original*) captures the high-isolation end of the distribution, where atypical scripts such as *Velvet Buzzsaw*, *Shrek the Third*, *The Disaster Artist*, and *The Damned United* stand out. The right column (*Top 5 Most Conformist*) captures the low-isolation end and is dominated by **Harry Potter** entries, indicating exceptionally tight semantic similarity within that franchise.
 
 ## Mapping the Fringe
 
@@ -1636,7 +1632,7 @@ fig.update_layout(
 fig.show()
 ```
 
-The resulting map confirms the topological validity of the UMAP reduction. True isolation in 768 dimensions maps perfectly to the physical geography of the 2D projection. The bright yellow "flares" of unclassifiable art — the experiments, the satires, the structural anomalies — orbit on the extreme outer rim of the cinematic galaxy, looking inwards at the dense, indistinguishable cores of Hollywood's generic machine.
+The resulting map confirms the topological validity of the UMAP reduction. True isolation in 768 dimensions maps perfectly to the physical geography of the 2D projection. The bright yellow "flares" of unclassifiable art, the experiments, satires, and structural anomalies, orbit on the extreme outer rim of the cinematic galaxy, looking inwards at the dense, indistinguishable cores of Hollywood's generic machine.
 
 
 # Temporal Evolution of Semantics (1970s–2010s)
@@ -1719,9 +1715,9 @@ fig.show()
 
 The contour shift makes the structural transformation of Hollywood undeniable. 
 
-In the 1980s (blue contours), the defining mass of cinema sat in a tightly clustered ring traversing the middle and lower-left of the semantic space — the heartland of the action-thriller, the buddy-cop comedy, and the testosterone-fueled adventure. 
+In the 1980s (blue contours), the defining mass of cinema sat in a tightly clustered ring traversing the middle and lower-left of the semantic space; the heartland of the action-thriller, the buddy-cop comedy, and the testosterone-fueled adventure. 
 
-By the 2010s (red contours), the cinematic landscape had fractured. The central 80s gravity well has almost completely evaporated. Instead, we see the mass pushed to the extreme north (the indie/digital boom) and a secondary, hyper-dense gravity well concentrated in the deep south — the anchor of the modern cinematic universe (MCU, DC), where immense budgets and rigid structural formulas create an inescapable semantic black hole.
+By the 2010s (red contours), the cinematic landscape had fractured. The central 80s gravity well has almost completely evaporated. Instead, we see the mass pushed to the extreme north (the indie/digital boom) and a secondary, hyper-dense gravity well concentrated in the deep south; the anchor of the modern cinematic universe (MCU, DC), where immense budgets and rigid structural formulas create an inescapable semantic black hole.
 
 
 # Conclusions and Limitations
@@ -1784,11 +1780,11 @@ fig.show()
 
 ## What the Galaxy Tells Us About Storytelling
 
-The central finding of this paper is deceptively simple: **a pre-trained language model, used without any supervised cinematic labels in this project, organises 2,612 screenplays into a structured geometric space that reproduces — and extends — categories familiar from film scholarship**.
+The central finding of this paper is deceptively simple: **a pre-trained language model, used without any supervised cinematic labels in this project, organises 2,612 screenplays into a structured geometric space that reproduces and extends categories familiar from film scholarship**.
 
 Genre emerges without supervision. Sentiment stratifies along a coherent axis. Franchises collapse to mathematical points. Auteurs carve territories. And the economics of production align with the geometry in precisely the way that the theory of narrative risk would predict: expensive stories live in the south, where genre expectations are most rigid and creative risk-taking is most costly.
 
-The single most intellectually striking result is the **orthogonality of quality to position** ($r = +0.003$). The galaxy tells us everything about *what kind* of story Hollywood is telling and almost nothing about *how well* it is told. A masterpiece and a disaster can be semantic neighbours. This means the latent space does not encode craft — it encodes archetype. The archetypal and the excellent are entirely separate dimensions of a film.
+The single most intellectually striking result is the **orthogonality of quality to position** ($r = +0.003$). The galaxy tells us everything about *what kind* of story Hollywood is telling and almost nothing about *how well* it is told. A masterpiece and a disaster can be semantic neighbours. This means the latent space does not encode craft; it encodes archetype. The archetypal and the excellent are entirely separate dimensions of a film.
 
 ## Limitations
 
