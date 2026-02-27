@@ -2,16 +2,12 @@ from __future__ import annotations
 
 import os
 import threading
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from sentence_transformers import SentenceTransformer
-from sklearn.metrics.pairwise import cosine_similarity
-
-from src.embeddings import load_embeddings
 
 # App configuration
 app = FastAPI(title="Hollywood Mirror API", version="0.1.0")
@@ -59,7 +55,7 @@ app.add_middleware(
 # Global dictionaries to store our loaded artifacts
 MATRICES: dict[str, np.ndarray] = {}
 TITLES_MAP: dict[str, list[str]] = {}
-MODELS: dict[str, SentenceTransformer] = {}
+MODELS: dict[str, Any] = {}
 MODEL_NAMES = {
     "mpnet": "sentence-transformers/all-mpnet-base-v2",
     "minilm": "sentence-transformers/all-MiniLM-L6-v2",
@@ -71,6 +67,10 @@ def _ensure_resources_loaded(model_id: Literal["mpnet", "minilm"]) -> None:
     """
     Lazily load embeddings and model artifacts for the requested model id.
     """
+    # Defer heavyweight imports so the web process can bind a port quickly on Render.
+    from sentence_transformers import SentenceTransformer
+    from src.embeddings import load_embeddings
+
     if model_id in MATRICES and model_id in MODELS and model_id in TITLES_MAP:
         return
 
@@ -144,10 +144,11 @@ def similar_movies(payload: SimilarMoviesRequest) -> SimilarMoviesResponse:
     titles = TITLES_MAP[req_model]
 
     # Vectorize payload
-    vec = model.encode([payload.text], convert_to_numpy=True).astype(np.float32)
+    vec = model.encode([payload.text], convert_to_numpy=True).astype(np.float32).ravel()
 
-    # Cosine Similarity
-    sims = cosine_similarity(matrix, vec).ravel()
+    # Cosine similarity without sklearn dependency at request time.
+    denom = (np.linalg.norm(matrix, axis=1) * np.linalg.norm(vec)) + 1e-8
+    sims = (matrix @ vec) / denom
     order = np.argsort(sims)[::-1][: payload.k]
 
     def clean_title(raw_title: str) -> str:
