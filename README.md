@@ -8,12 +8,19 @@ Hollywood Mirror is a cinematic analysis project built on NLP and semantic embed
 2. A semantic search web app where users submit free text and get Top-K similar movies.
 3. A reproducible pipeline for script parsing, NLP metrics extraction, and embedding generation.
 
+## Frontend preview
+
+![Hollywood Mirror frontend preview](docs/images/frontend-preview.png)
+
 ## Repository structure
 
 ```text
 Hollywood Mirror/
 ├── README.md
 ├── requirements.txt
+├── docs/
+│   └── images/
+│       └── frontend-preview.png
 ├── data/
 │   ├── raw/                        # Local screenplay JSON files (not committed)
 │   ├── metadata/                   # Local metadata CSV files (not committed)
