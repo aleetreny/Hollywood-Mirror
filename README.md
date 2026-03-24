@@ -27,6 +27,8 @@ Hollywood Mirror is a cinematic analysis project built on NLP and semantic embed
 Hollywood Mirror/
 ├── README.md
 ├── requirements.txt
+├── Dockerfile                  # Container config for Hugging Face Spaces
+├── upload_hf.py                # Script to push updates to Hugging Face
 ├── docs/
 │   └── images/
 │       └── frontend-preview.png
@@ -144,9 +146,8 @@ Commit status note:
 
 ## Backend API
 
-```bash
-uvicorn src.api:app --reload --port 8000
-```
+- **Development**: `uvicorn src.api:app --reload --port 8000`
+- **Production**: `https://imagenbomba-hollywood-mirror.hf.space`
 
 Main endpoint:
 
@@ -158,12 +159,15 @@ Main endpoint:
 
 ## Frontend
 
+- **Development**:
 ```bash
 cd frontend
 npm install
 cp .env.example .env
 npm run dev
 ```
+
+- **Production URL**: `Tu_URL_de_Vercel_Aqui`
 
 Environment variable:
 
@@ -188,15 +192,19 @@ HTML output is written to `analysis/_site/`.
 This project uses a decoupled AI stack optimized for free-tier deployments:
 
 ### Backend (Hugging Face Spaces)
+
 The API backend requires significant RAM to load PyTorch embedding models (like `minilm` or `mpnet`). We use **Hugging Face Spaces (Docker - Free Tier)** which provides 16GB of RAM.
 
 To upload any local changes or new embeddings to your Hugging Face space without battling local `git-lfs` rules, simply run:
+
 ```bash
 python3 upload_hf.py
 ```
-*(Keep this script in your repository to easily push future updates)*
+
+_(Keep this script in your repository to easily push future updates)_
 
 ### Frontend (Vercel)
+
 The Vite/React UI is hosted on **Vercel** (with `frontend` set as the Root Directory).
 Make sure to set the `VITE_API_BASE_URL` environment variable in Vercel to point to the Hugging Face API URL.
 For CORS, set `API_CORS_ORIGINS` in your Hugging Face Space Settings to your Vercel URL.
