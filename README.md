@@ -1,3 +1,12 @@
+---
+title: Hollywood Mirror
+emoji: 🎬
+colorFrom: blue
+colorTo: purple
+sdk: docker
+pinned: false
+---
+
 # Hollywood Mirror
 
 Hollywood Mirror is a cinematic analysis project built on NLP and semantic embeddings. It includes a Python data pipeline, a FastAPI backend, a React/Vite frontend, and a Quarto report.
@@ -173,3 +182,21 @@ quarto render galaxia.qmd
 ```
 
 HTML output is written to `analysis/_site/`.
+
+## Deploy (Production)
+
+This project uses a decoupled AI stack optimized for free-tier deployments:
+
+### Backend (Hugging Face Spaces)
+The API backend requires significant RAM to load PyTorch embedding models (like `minilm` or `mpnet`). We use **Hugging Face Spaces (Docker - Free Tier)** which provides 16GB of RAM.
+
+To upload any local changes or new embeddings to your Hugging Face space without battling local `git-lfs` rules, simply run:
+```bash
+python3 upload_hf.py
+```
+*(Keep this script in your repository to easily push future updates)*
+
+### Frontend (Vercel)
+The Vite/React UI is hosted on **Vercel** (with `frontend` set as the Root Directory).
+Make sure to set the `VITE_API_BASE_URL` environment variable in Vercel to point to the Hugging Face API URL.
+For CORS, set `API_CORS_ORIGINS` in your Hugging Face Space Settings to your Vercel URL.
