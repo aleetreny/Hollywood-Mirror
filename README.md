@@ -7,8 +7,6 @@ Hollywood Mirror is now organized as a web-first monorepo:
 - `data/processed/` stores the committed embedding artifacts required by the web app.
 - `analysis/` contains the Quarto report and is intentionally separate from the web deploy path.
 
-The repository has been optimized so the web stack can be deployed independently from
-the data pipeline and the report.
 
 ## Quick Start
 
@@ -143,7 +141,8 @@ The repository includes:
 
 - `vercel.json`
 
-It keeps the Vercel build rooted on `frontend/dist` even when the repo root is used.
+It keeps the Vercel build rooted on `frontend/dist` even when the repo root is used,
+and proxies `/api/*` requests to the Hugging Face Space backend.
 
 ### Hugging Face Spaces
 
