@@ -1,0 +1,9 @@
+# Web runtime dependencies for the semantic search API.
+# Keep this file intentionally small so deployments only install
+# what the production web service actually needs.
+
+fastapi>=0.115
+numpy>=1.24,<2
+sentence-transformers>=2.2,<3
+torch>=2.0
+uvicorn[standard]>=0.32

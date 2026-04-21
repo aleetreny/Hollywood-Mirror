@@ -7,11 +7,13 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, '.'),
+      '@': path.resolve(__dirname, 'src'),
     },
   },
+  build: {
+    target: 'es2022',
+  },
   server: {
-    // Optional toggle for environments where live reload is undesirable.
     hmr: process.env.DISABLE_HMR !== 'true',
   },
 });

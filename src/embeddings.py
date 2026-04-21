@@ -4,13 +4,16 @@ and mean pooling per movie. Reusable from Quarto and the web app.
 Output: matrix [N, dim] stored in .npy plus titles in .txt (same order).
 """
 
+from __future__ import annotations
+
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import numpy as np
-import pandas as pd
-from sentence_transformers import SentenceTransformer
-from tqdm import tqdm
+
+if TYPE_CHECKING:
+    import pandas as pd
+    from sentence_transformers import SentenceTransformer
 
 
 # Available models: (huggingface_name, chunk_size_words)
@@ -22,6 +25,70 @@ MODEL_CONFIG = {
 }
 DEFAULT_MODEL_ID = "mpnet"
 OVERLAP_FRAC = 0.10  # 10% overlap between chunks
+
+
+def resolve_processed_dir(processed_dir: Optional[Path] = None) -> Path:
+    repo_root = Path(__file__).resolve().parent.parent
+    return processed_dir or repo_root / "data" / "processed"
+
+
+def resolve_embedding_artifacts(
+    *,
+    processed_dir: Optional[Path] = None,
+    model_id: str = DEFAULT_MODEL_ID,
+    output_name: Optional[str] = None,
+) -> tuple[Path, Path]:
+    processed_dir = resolve_processed_dir(processed_dir)
+    base_name = output_name or f"movie_embeddings_{model_id}"
+    base = processed_dir / base_name
+    return base.with_suffix(".npy"), base.with_suffix(".txt")
+
+
+def _read_titles(path: Path) -> list[str]:
+    return [line for line in path.read_text(encoding="utf-8").splitlines() if line]
+
+
+def _resolve_existing_artifacts(
+    *,
+    processed_dir: Optional[Path] = None,
+    model_id: str = DEFAULT_MODEL_ID,
+    output_name: Optional[str] = None,
+) -> tuple[Path, Path]:
+    path_npy, path_titles = resolve_embedding_artifacts(
+        processed_dir=processed_dir,
+        model_id=model_id,
+        output_name=output_name,
+    )
+    if path_npy.exists() and path_titles.exists():
+        return path_npy, path_titles
+
+    legacy_base = resolve_processed_dir(processed_dir) / "movie_embeddings"
+    legacy_npy = legacy_base.with_suffix(".npy")
+    legacy_txt = legacy_base.with_suffix(".txt")
+    if legacy_npy.exists() and legacy_txt.exists():
+        return legacy_npy, legacy_txt
+
+    raise FileNotFoundError(
+        f"Run first: python -m src.embeddings "
+        f"(could not find {path_npy} / {path_titles} or legacy movie_embeddings.*)"
+    )
+
+
+def has_embeddings(
+    *,
+    processed_dir: Optional[Path] = None,
+    model_id: str = DEFAULT_MODEL_ID,
+    output_name: Optional[str] = None,
+) -> bool:
+    try:
+        _resolve_existing_artifacts(
+            processed_dir=processed_dir,
+            model_id=model_id,
+            output_name=output_name,
+        )
+    except FileNotFoundError:
+        return False
+    return True
 
 
 def chunk_text(
@@ -80,6 +147,9 @@ def build_embedding_matrix(
     For each DataFrame row, perform chunking + encode + mean pooling.
     Returns (matrix, titles) where matrix has shape (N, dim) and titles share row order.
     """
+    from sentence_transformers import SentenceTransformer
+    from tqdm import tqdm
+
     if model is None:
         name, cs = MODEL_CONFIG.get(model_id, MODEL_CONFIG[DEFAULT_MODEL_ID])
         model = SentenceTransformer(name)
@@ -114,19 +184,22 @@ def run(
 
     Returns (matrix, titles).
     """
-    repo_root = Path(__file__).resolve().parent.parent
-    processed_dir = processed_dir or repo_root / "data" / "processed"
+    import pandas as pd
+    from sentence_transformers import SentenceTransformer
+
+    processed_dir = resolve_processed_dir(processed_dir)
     base_in = processed_dir / input_name
 
     # Model-specific default output name.
-    output_name = output_name or f"movie_embeddings_{model_id}"
-    base_out = processed_dir / output_name
-    path_npy = base_out.with_suffix(".npy")
-    path_titles = base_out.with_suffix(".txt")
+    path_npy, path_titles = resolve_embedding_artifacts(
+        processed_dir=processed_dir,
+        model_id=model_id,
+        output_name=output_name,
+    )
 
     if not force and path_npy.exists() and path_titles.exists():
         matrix = np.load(path_npy, allow_pickle=False)
-        titles = path_titles.read_text(encoding="utf-8").strip().split("\n")
+        titles = _read_titles(path_titles)
         if len(titles) == matrix.shape[0]:
             return matrix, titles
 
@@ -161,30 +234,13 @@ def load_embeddings(
         - If None (default), look for "movie_embeddings_{model_id}".
         - For backward compatibility, fall back to "movie_embeddings".
     """
-    repo_root = Path(__file__).resolve().parent.parent
-    processed_dir = processed_dir or repo_root / "data" / "processed"
-
-    # Preferred base name.
-    base_name = output_name or f"movie_embeddings_{model_id}"
-    base = processed_dir / base_name
-    path_npy = base.with_suffix(".npy")
-    path_titles = base.with_suffix(".txt")
-
-    # Backward compatibility with legacy base name (without model suffix).
-    if not path_npy.exists() or not path_titles.exists():
-        legacy_base = processed_dir / "movie_embeddings"
-        legacy_npy = legacy_base.with_suffix(".npy")
-        legacy_txt = legacy_base.with_suffix(".txt")
-        if legacy_npy.exists() and legacy_txt.exists():
-            path_npy = legacy_npy
-            path_titles = legacy_txt
-        else:
-            raise FileNotFoundError(
-                f"Run first: python -m src.embeddings "
-                f"(could not find {base}.* or movie_embeddings.*)"
-            )
+    path_npy, path_titles = _resolve_existing_artifacts(
+        processed_dir=processed_dir,
+        model_id=model_id,
+        output_name=output_name,
+    )
     matrix = np.load(path_npy, allow_pickle=False)
-    titles = path_titles.read_text(encoding="utf-8").strip().split("\n")
+    titles = _read_titles(path_titles)
     return matrix, titles
 
 

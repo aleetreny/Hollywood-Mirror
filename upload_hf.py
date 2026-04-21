@@ -1,16 +1,19 @@
 from huggingface_hub import HfApi
 import getpass
+import os
 import sys
 
 def main():
     print("=== Subidor a Hugging Face Spaces ===")
-    token = getpass.getpass("Pega tu Token de Hugging Face (no se verá al escribir): ")
+    token = os.getenv("HF_TOKEN", "").strip()
+    if not token:
+        token = getpass.getpass("Pega tu Token de Hugging Face (no se verá al escribir): ").strip()
     
-    if not token.strip():
+    if not token:
         print("Error: El token no puede estar vacío.")
         sys.exit(1)
         
-    api = HfApi(token=token.strip())
+    api = HfApi(token=token)
     
     print("\nSubiendo archivos... por favor espera (ignorar los archivos pesados temporales).")
     try:
@@ -23,16 +26,22 @@ def main():
                 ".venv/*",
                 "venv/*",
                 "my_env/*",
+                "__pycache__/*",
+                "**/__pycache__/*",
                 "node_modules/*",
+                "frontend/*",
                 "frontend/dist/*",
+                "analysis/*",
+                "docs/*",
                 ".quarto/*",
                 "**/_site/*",
                 "**/*_files/*",
-                "__pycache__/*",
                 ".vscode/*",
                 ".DS_Store",
+                "*.csv",
                 "*.parquet",
-                "data/raw/*"
+                "data/raw/*",
+                "data/metadata/*",
             ]
         )
         print("\n¡SUBIDA COMPLETADA CON ÉXITO! 🎉")

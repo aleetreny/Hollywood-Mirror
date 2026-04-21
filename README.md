@@ -1,210 +1,151 @@
----
-title: Hollywood Mirror
-emoji: 🎬
-colorFrom: blue
-colorTo: purple
-sdk: docker
-pinned: false
----
-
 # Hollywood Mirror
 
-Hollywood Mirror is a cinematic analysis project built on NLP and semantic embeddings. It includes a Python data pipeline, a FastAPI backend, a React/Vite frontend, and a Quarto report.
+Hollywood Mirror is now organized as a web-first monorepo:
 
-## What is included
+- `frontend/` contains the React + Vite client.
+- `src/api.py` exposes the semantic search API.
+- `data/processed/` stores the committed embedding artifacts required by the web app.
+- `analysis/` contains the Quarto report and is intentionally separate from the web deploy path.
 
-1. Scientific analysis in Quarto (`analysis/galaxia.qmd`) with UMAP projections, clustering, and editorial interpretation.
-2. A semantic search web app where users submit free text and get Top-K similar movies.
-3. A reproducible pipeline for script parsing, NLP metrics extraction, and embedding generation.
+The repository has been optimized so the web stack can be deployed independently from
+the data pipeline and the report.
 
-## Frontend preview
+## Quick Start
 
-![Hollywood Mirror frontend preview](docs/images/frontend-preview.png)
-
-## Repository structure
-
-```text
-Hollywood Mirror/
-├── README.md
-├── requirements.txt
-├── Dockerfile                  # Container config for Hugging Face Spaces
-├── upload_hf.py                # Script to push updates to Hugging Face
-├── docs/
-│   └── images/
-│       └── frontend-preview.png
-├── data/
-│   ├── raw/                        # Local screenplay JSON files (not committed)
-│   ├── metadata/                   # Local metadata CSV files (not committed)
-│   └── processed/                  # Mixed: committed embedding files + local generated artifacts
-├── src/
-│   ├── parsing.py                  # JSON -> movies_cleaned.{parquet,csv}
-│   ├── extract_metrics.py          # NLP metrics -> movie_metrics.csv
-│   ├── embeddings.py               # mpnet/minilm embeddings -> .npy + .txt
-│   ├── precompute.py               # merge + UMAP -> galaxia_precalc.parquet
-│   └── api.py                      # endpoint POST /api/similar-movies
-├── analysis/
-│   ├── galaxia.qmd
-│   ├── custom.scss
-│   └── _quarto.yml
-└── frontend/
-    ├── package.json
-    ├── .env.example
-    └── src/
-```
-
-## Requirements
-
-- Python 3.10 or newer.
-- Node.js 20 or newer.
-- Quarto CLI, only required to render the report.
-
-Base Python setup:
+### 1. Install the full local environment
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+npm --prefix frontend ci
 ```
 
-## Data source
-
-Primary dataset:
-
-- Kaggle `gufukuro/movie-scripts-corpus`:
-  https://www.kaggle.com/datasets/gufukuro/movie-scripts-corpus?resource=download
-
-Git tracking in this repository is intentionally selective:
-
-- `data/raw/` is ignored (`data/raw/` in `.gitignore`) and is not committed.
-- `data/metadata/` is effectively local-only because `*.csv` is ignored globally.
-- `data/processed/` is partially committed.
-  - Committed now: `movie_embeddings_mpnet.npy`, `movie_embeddings_mpnet.txt`,
-    `movie_embeddings_minilm.npy`, `movie_embeddings_minilm.txt`.
-  - Local-only by ignore rules: generated `*.csv` and `*.parquet` files such as
-    `movies_cleaned.csv`, `movies_cleaned.parquet`, `movie_metrics.csv`, and
-    `galaxia_precalc.parquet`.
-
-From the Kaggle dataset, this project uses the `movie_metadata` subset, especially:
-
-- `movie_meta_data.csv` (required by current pipeline)
-- `screenplay_awards.csv` (optional, useful for extra analysis)
-
-Example using `kagglehub`:
-
-```python
-# pip install kagglehub[pandas-datasets] pandas
-import kagglehub
-from kagglehub import KaggleDatasetAdapter
-
-meta = kagglehub.load_dataset(
-    KaggleDatasetAdapter.PANDAS,
-    "gufukuro/movie-scripts-corpus",
-    "movie_metadata/movie_meta_data.csv",
-)
-
-awards = kagglehub.load_dataset(
-    KaggleDatasetAdapter.PANDAS,
-    "gufukuro/movie-scripts-corpus",
-    "movie_metadata/screenplay_awards.csv",
-)
-
-meta.to_csv("data/metadata/movie_meta_data.csv", index=False)
-awards.to_csv("data/metadata/screenplay_awards.csv", index=False)
-```
-
-Also place screenplay JSON files from the same Kaggle dataset under `data/raw/`.
-
-## Data pipeline
+### 2. Run the API
 
 ```bash
-# 1) Parse screenplay JSON files
-python -m src.parsing
-
-# 2) Compute NLP metrics
-python -m src.extract_metrics
-
-# 3) Build embeddings (both models supported by the API)
-python -m src.embeddings mpnet
-python -m src.embeddings minilm
-
-# 4) Build precomputed dataset for Quarto
-python -m src.precompute
+python -m uvicorn src.api:app --reload --port 8000
 ```
 
-Expected artifacts in `data/processed/`:
+The API starts on `http://localhost:8000`.
 
-- `movies_cleaned.parquet` and `movies_cleaned.csv`
-- `movie_metrics.csv`
-- `movie_embeddings_mpnet.npy` and `movie_embeddings_mpnet.txt`
-- `movie_embeddings_minilm.npy` and `movie_embeddings_minilm.txt`
-- `galaxia_precalc.parquet`
+### 3. Run the frontend
 
-Commit status note:
+```bash
+cp frontend/.env.example frontend/.env
+npm --prefix frontend run dev
+```
 
-- Committed: the two embedding pairs (`*.npy` + `*.txt`).
-- Ignored by `.gitignore`: generated `*.csv` and `*.parquet` artifacts.
+The frontend starts on `http://localhost:3000`.
 
-## Backend API
+## Web Architecture
 
-- **Development**: `uvicorn src.api:app --reload --port 8000`
-- **Production**: `https://imagenbomba-hollywood-mirror.hf.space`
+The web application only depends on:
 
-Main endpoint:
+- `src/`
+- `frontend/`
+- `data/processed/movie_embeddings_*.npy`
+- `data/processed/movie_embeddings_*.txt`
 
+Everything related to Quarto, exploratory analysis, raw screenplay data, and local
+metadata is excluded from the web deployment path.
+
+### API behavior
+
+Main routes:
+
+- `GET /healthz`
+- `GET /api/capabilities`
 - `POST /api/similar-movies`
-- Body JSON:
-  - `text`: string
-  - `model`: `mpnet` or `minilm`
-  - `k`: integer (1-50)
+- `POST /api/warmup`
 
-## Frontend
+Search models currently supported:
 
-- **Development**:
-```bash
-cd frontend
-npm install
-cp .env.example .env
-npm run dev
-```
+- `minilm`
+- `mpnet`
 
-- **Production URL**: `Tu_URL_de_Vercel_Aqui`
+The API normalizes embedding matrices once, caches repeated query vectors in memory,
+and exposes a dedicated warmup route for the default model.
+It also defaults to public CORS (`*`) so a static frontend can call it from Vercel,
+Cloudflare, Netlify, or Hugging Face without extra credentials setup.
 
-Environment variable:
+Cold-start strategy for first-time visitors:
 
-- `VITE_API_BASE_URL`, default is `http://localhost:8000`.
+- the frontend calls `POST /api/warmup` as soon as the page opens
+- the default model (`minilm`) is already baked into the Hugging Face Docker image
+- the backend container preloads `minilm` on startup in Docker deployments
+- the search button stays disabled while the initial warmup is still running
+
+## Python Dependencies
+
+The repository uses:
+
+- `requirements.txt` for the full local environment
+- `requirements-web.txt` for the production API runtime only
+
+## Frontend Build
 
 Useful commands:
 
-- `npm run lint`
-- `npm run build`
+```bash
+npm --prefix frontend run build
+npm --prefix frontend run check
+```
 
-## Quarto report
+The frontend defaults to:
+
+- local API: `http://localhost:8000`
+- production API: same origin, unless `VITE_API_BASE_URL` is explicitly set
+- for Vercel + Hugging Face, set `VITE_API_BASE_URL` to the public Space URL
+
+## Data Pipeline
+
+The data pipeline remains available but is not required to run the web app.
+
+Expected local-only inputs:
+
+- `data/raw/`
+- `data/metadata/movie_meta_data.csv`
+
+Pipeline entry points:
+
+```bash
+python -m src.parsing
+python -m src.extract_metrics
+python -m src.embeddings mpnet
+python -m src.embeddings minilm
+python -m src.precompute
+```
+
+## Quarto Report
+
+The report is intentionally out of the web deployment path.
 
 ```bash
 cd analysis
 quarto render galaxia.qmd
 ```
 
-HTML output is written to `analysis/_site/`.
+## Deployment Notes
 
-## Deploy (Production)
+### Backend container
 
-This project uses a decoupled AI stack optimized for free-tier deployments:
+The Docker image is trimmed for the API runtime:
 
-### Backend (Hugging Face Spaces)
+- installs only `requirements-web.txt`
+- downloads and bakes the default `minilm` model during image build
+- copies only `src/` and `data/processed/`
+- excludes `frontend/`, `analysis/`, raw data, and generated report artifacts
 
-The API backend requires significant RAM to load PyTorch embedding models (like `minilm` or `mpnet`). We use **Hugging Face Spaces (Docker - Free Tier)** which provides 16GB of RAM.
+### Static frontend providers
 
-To upload any local changes or new embeddings to your Hugging Face space without battling local `git-lfs` rules, simply run:
+The repository includes:
 
-```bash
-python3 upload_hf.py
-```
+- `vercel.json`
 
-_(Keep this script in your repository to easily push future updates)_
+It keeps the Vercel build rooted on `frontend/dist` even when the repo root is used.
 
-### Frontend (Vercel)
+### Hugging Face Spaces
 
-The Vite/React UI is hosted on **Vercel** (with `frontend` set as the Root Directory).
-Make sure to set the `VITE_API_BASE_URL` environment variable in Vercel to point to the Hugging Face API URL.
-For CORS, set `API_CORS_ORIGINS` in your Hugging Face Space Settings to your Vercel URL.
+`upload_hf.py` now ignores analysis artifacts, frontend assets, raw data, and generated
+CSV/Parquet files so uploads stay focused on the API runtime.
