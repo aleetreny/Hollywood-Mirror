@@ -1,6 +1,6 @@
 import type {ReactNode} from 'react';
 
-import {Film} from 'lucide-react';
+import {Film, Github} from 'lucide-react';
 
 export function Layout({children}: {children: ReactNode}) {
   return (
@@ -18,6 +18,15 @@ export function Layout({children}: {children: ReactNode}) {
               Semantic movie search over screenplay embeddings
             </p>
           </div>
+          <a
+            className="ml-auto flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-zinc-900/70 text-zinc-300 transition hover:border-emerald-400/40 hover:text-white"
+            href="https://github.com/aleetreny/Hollywood-Mirror"
+            target="_blank"
+            rel="noreferrer"
+            aria-label="Open Hollywood Mirror repository on GitHub"
+          >
+            <Github className="h-5 w-5" />
+          </a>
         </div>
       </header>
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
