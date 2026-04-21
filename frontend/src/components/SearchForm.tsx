@@ -8,7 +8,6 @@ interface SearchFormProps {
   capabilities: SearchCapabilitiesResponse;
   capabilitiesError: string | null;
   isBackendWarming: boolean;
-  backendWarmupNote: string | null;
   isLoading: boolean;
   onSearch: (request: SimilarMoviesRequest) => void;
 }
@@ -21,7 +20,6 @@ export function SearchForm({
   capabilities,
   capabilitiesError,
   isBackendWarming,
-  backendWarmupNote,
   isLoading,
   onSearch,
 }: SearchFormProps) {
@@ -72,26 +70,6 @@ export function SearchForm({
       onSubmit={handleSubmit}
       className="flex min-h-[560px] flex-col gap-6 rounded-3xl border border-white/10 bg-zinc-900/80 p-6 shadow-xl lg:sticky lg:top-24"
     >
-      <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-zinc-300">
-        <div className="flex items-center justify-between gap-3">
-          <span className="font-medium text-zinc-100">Backend capabilities</span>
-          <span className="text-xs uppercase tracking-[0.2em] text-zinc-500">
-            {isBackendWarming
-              ? 'warming'
-              : `${enabledModels.length} model${enabledModels.length === 1 ? '' : 's'} ready`}
-          </span>
-        </div>
-        <p className="mt-2 text-xs leading-5 text-zinc-400">
-          {capabilitiesError
-            ? capabilitiesError
-            : isBackendWarming && backendWarmupNote
-              ? backendWarmupNote
-            : activeModel
-              ? `Default model: ${activeModel.id}. Up to ${maxK} results per search.`
-              : 'Waiting for the backend to expose an available model.'}
-        </p>
-      </div>
-
       <div className="flex flex-1 flex-col gap-2">
         <label htmlFor="text" className="text-sm font-medium text-zinc-300">
           Your Idea or Script Fragment
@@ -108,6 +86,9 @@ export function SearchForm({
           <span>{text.trim().split(/\s+/).filter(Boolean).length} words</span>
           <span>Longer prompts usually produce better matches.</span>
         </div>
+        {capabilitiesError ? (
+          <p className="mt-1 text-sm text-red-400">{capabilitiesError}</p>
+        ) : null}
         {error ? <p className="mt-1 text-sm text-red-400">{error}</p> : null}
       </div>
 

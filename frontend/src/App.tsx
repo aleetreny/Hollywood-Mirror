@@ -14,7 +14,6 @@ import {
 export default function App() {
   const [capabilities, setCapabilities] = useState<SearchCapabilitiesResponse>(FALLBACK_CAPABILITIES);
   const [capabilitiesError, setCapabilitiesError] = useState<string | null>(null);
-  const [backendWarmupNote, setBackendWarmupNote] = useState<string | null>('Warming the default model for first search...');
   const [isBackendWarming, setIsBackendWarming] = useState(true);
   const [results, setResults] = useState<MovieResult[] | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -63,20 +62,11 @@ export default function App() {
           }));
           setCapabilitiesError(null);
         });
-        setBackendWarmupNote(
-          response.loaded_now
-            ? `Backend ready. ${response.model} loaded in ${response.elapsed_ms} ms.`
-            : `Backend already warm. ${response.model} reused in ${response.elapsed_ms} ms.`
-        );
       } catch (requestError: unknown) {
         if (controller.signal.aborted) {
           return;
         }
-        const message =
-          requestError instanceof Error
-            ? requestError.message
-            : 'Warmup could not complete in the background.';
-        setBackendWarmupNote(message);
+        console.error('Warmup error:', requestError);
       } finally {
         if (!controller.signal.aborted) {
           setIsBackendWarming(false);
@@ -130,7 +120,6 @@ export default function App() {
         <div className="lg:col-span-6 xl:col-span-5">
           <SearchForm
             capabilities={capabilities}
-            backendWarmupNote={backendWarmupNote}
             capabilitiesError={capabilitiesError}
             isBackendWarming={isBackendWarming}
             isLoading={isLoading}
