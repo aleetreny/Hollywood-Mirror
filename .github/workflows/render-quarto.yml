@@ -39,10 +39,13 @@ jobs:
         working-directory: analysis
         run: quarto render galaxia.qmd --to html
 
+      - name: Locate rendered report
+        run: find . -type f -name "galaxia.html" -print -exec ls -lh {} \;
+
       - name: Upload rendered report
         uses: actions/upload-artifact@v4
         with:
           name: hollywood-mirror-quarto-html
-          path: analysis/galaxia.html
+          path: "**/galaxia.html"
           if-no-files-found: error
           retention-days: 30
