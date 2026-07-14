@@ -27,7 +27,7 @@ export function SearchForm({engineStatus, isLoading, onSearch}: SearchFormProps)
     setError(null);
 
     if (!text.trim()) {
-      setError('Please enter a movie idea or script fragment.');
+      setError('Please enter a movie idea or script fragment in English.');
       return;
     }
 
@@ -47,11 +47,22 @@ export function SearchForm({engineStatus, isLoading, onSearch}: SearchFormProps)
       className="flex min-h-[560px] flex-col gap-6 rounded-3xl border border-white/10 bg-zinc-900/80 p-6 shadow-xl lg:sticky lg:top-24"
     >
       <div className="flex flex-1 flex-col gap-2">
-        <label htmlFor="text" className="text-sm font-medium text-zinc-300">
-          Your Idea or Script Fragment
-        </label>
+        <div className="flex items-center justify-between gap-3">
+          <label htmlFor="text" className="text-sm font-medium text-zinc-300">
+            Your Idea or Script Fragment
+          </label>
+          <span className="rounded-full border border-amber-400/30 bg-amber-400/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-amber-300">
+            English only
+          </span>
+        </div>
+        <p id="language-note" className="text-xs leading-relaxed text-amber-200/80">
+          Use English for reliable results. Queries in other languages may produce misleading
+          matches because the current embedding model is trained for English.
+        </p>
         <textarea
           id="text"
+          lang="en"
+          aria-describedby="language-note"
           value={text}
           onChange={(event) => setText(event.target.value)}
           placeholder="A detective with insomnia tries to solve a murder in a city where the sun never sets..."
@@ -60,7 +71,7 @@ export function SearchForm({engineStatus, isLoading, onSearch}: SearchFormProps)
         />
         <div className="flex items-center justify-between gap-4 text-xs text-zinc-500">
           <span>{text.trim().split(/\s+/).filter(Boolean).length} words</span>
-          <span>Longer prompts usually produce better matches.</span>
+          <span>Longer English prompts usually produce better matches.</span>
         </div>
         {error ? <p className="mt-1 text-sm text-red-400">{error}</p> : null}
       </div>
