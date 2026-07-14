@@ -4,7 +4,7 @@ import type {MovieResult} from '@/types';
 import type {WorkerRequest, WorkerResponse} from './protocol';
 
 const TRANSFORMERS_URL = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1';
-const MODEL_ID = 'onnx-community/all-MiniLM-L6-v2-ONNX';
+const MODEL_ID = 'Xenova/all-MiniLM-L6-v2';
 const DATA_VERSION = 'c8783c29d15fc7de388e5ae6d6a1167ea4ebeb99';
 const DATA_BASE_URL = `https://cdn.jsdelivr.net/gh/aleetreny/Hollywood-Mirror@${DATA_VERSION}/data/processed`;
 const EMBEDDINGS_URL = `${DATA_BASE_URL}/movie_embeddings_minilm.npy`;
