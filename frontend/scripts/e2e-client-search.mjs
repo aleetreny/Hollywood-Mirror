@@ -36,7 +36,15 @@ try {
   }
 
   await searchButton.click();
-  await page.getByRole('heading', {name: 'Top Matches'}).waitFor({timeout: 240_000});
+  await page.locator('h2:has-text("Top Matches"), h3:has-text("Search Failed")').waitFor({
+    timeout: 240_000,
+  });
+
+  const searchFailed = page.getByRole('heading', {name: 'Search Failed'});
+  if (await searchFailed.isVisible()) {
+    const failurePanel = searchFailed.locator('..');
+    throw new Error(`The browser search failed: ${await failurePanel.innerText()}`);
+  }
 
   const resultRows = page.locator('main .divide-y > div');
   const resultCount = await resultRows.count();
