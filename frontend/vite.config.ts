@@ -13,6 +13,9 @@ export default defineConfig({
   build: {
     target: 'es2022',
   },
+  worker: {
+    format: 'es',
+  },
   server: {
     hmr: process.env.DISABLE_HMR !== 'true',
   },

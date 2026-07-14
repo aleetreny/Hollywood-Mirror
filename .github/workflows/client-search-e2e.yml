@@ -1,0 +1,72 @@
+name: Client search E2E
+
+on:
+  push:
+    branches:
+      - agent/client-side-search
+  pull_request:
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/client-search-e2e.yml'
+
+jobs:
+  browser-search:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install application dependencies
+        run: npm ci
+
+      - name: Typecheck and build
+        run: |
+          set -o pipefail
+          npm run check 2>&1 | tee check.log
+
+      - name: Install Playwright for the E2E check
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: Start preview server
+        run: |
+          npm run preview -- --host 127.0.0.1 > preview.log 2>&1 &
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:4173 > /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat preview.log
+          exit 1
+
+      - name: Run a real semantic search in Chromium
+        run: |
+          set -o pipefail
+          node scripts/e2e-client-search.mjs 2>&1 | tee e2e.log
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-search-e2e
+          path: |
+            frontend/client-search-e2e.png
+            frontend/check.log
+            frontend/e2e.log
+            frontend/preview.log
+          if-no-files-found: ignore
