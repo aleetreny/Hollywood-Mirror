@@ -13,7 +13,6 @@
     "check": "npm run typecheck && npm run build"
   },
   "dependencies": {
-    "@huggingface/transformers": "^3.8.1",
     "lucide-react": "^0.546.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
