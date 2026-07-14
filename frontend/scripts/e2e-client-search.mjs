@@ -2,12 +2,22 @@ import {chromium} from 'playwright';
 
 const browser = await chromium.launch({headless: true});
 const page = await browser.newPage();
-const browserErrors = [];
+const diagnostics = [];
 
-page.on('pageerror', (error) => browserErrors.push(`pageerror: ${error.message}`));
-page.on('requestfailed', (request) => {
-  browserErrors.push(`requestfailed: ${request.url()} (${request.failure()?.errorText ?? 'unknown'})`);
+page.on('console', (message) => {
+  diagnostics.push(`console.${message.type()}: ${message.text()}`);
 });
+page.on('pageerror', (error) => diagnostics.push(`pageerror: ${error.message}`));
+page.on('requestfailed', (request) => {
+  diagnostics.push(`requestfailed: ${request.url()} (${request.failure()?.errorText ?? 'unknown'})`);
+});
+page.on('response', (response) => {
+  if (response.status() >= 400) {
+    diagnostics.push(`response: ${response.status()} ${response.url()}`);
+  }
+});
+
+let failure;
 
 try {
   await page.goto('http://127.0.0.1:4173', {
@@ -39,12 +49,22 @@ try {
     throw new Error('The local search engine did not reach the ready state.');
   }
 
-  if (browserErrors.length > 0) {
-    throw new Error(browserErrors.join('\n'));
+  if (diagnostics.some((entry) => entry.startsWith('pageerror:'))) {
+    throw new Error('The page emitted an uncaught browser error.');
   }
 
-  await page.screenshot({path: 'client-search-e2e.png', fullPage: true});
   console.log(`Client-side semantic search passed with ${resultCount} results.`);
+} catch (error) {
+  failure = error;
+  diagnostics.push(`test-error: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
+  diagnostics.push(`url: ${page.url()}`);
+  diagnostics.push(
+    `main-text:\n${await page.locator('main').innerText().catch(() => '<main unavailable>')}`,
+  );
 } finally {
+  await page.screenshot({path: 'client-search-e2e.png', fullPage: true}).catch(() => undefined);
+  if (diagnostics.length > 0) console.error(diagnostics.join('\n'));
   await browser.close();
 }
+
+if (failure) throw failure;
