@@ -69,6 +69,10 @@ data/raw/**/*
 *.pkl
 *.joblib
 
+# Small, reproducible analysis artifacts required by the Quarto report
+!data/processed/galaxia_precalc.parquet
+!data/processed/movie_metrics.csv
+
 # ------------------------------
 # Project artifacts
 # ------------------------------
