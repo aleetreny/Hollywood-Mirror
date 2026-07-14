@@ -44,18 +44,20 @@ jobs:
 
       - name: Start preview server
         run: |
-          npm run preview -- --host 127.0.0.1 > /tmp/hollywood-mirror-preview.log 2>&1 &
+          npm run preview -- --host 127.0.0.1 > preview.log 2>&1 &
           for attempt in {1..30}; do
             if curl --fail --silent http://127.0.0.1:4173 > /dev/null; then
               exit 0
             fi
             sleep 1
           done
-          cat /tmp/hollywood-mirror-preview.log
+          cat preview.log
           exit 1
 
       - name: Run a real semantic search in Chromium
-        run: node scripts/e2e-client-search.mjs
+        run: |
+          set -o pipefail
+          node scripts/e2e-client-search.mjs 2>&1 | tee e2e.log
 
       - name: Upload diagnostics
         if: always()
@@ -65,5 +67,6 @@ jobs:
           path: |
             frontend/client-search-e2e.png
             frontend/check.log
-            /tmp/hollywood-mirror-preview.log
+            frontend/e2e.log
+            frontend/preview.log
           if-no-files-found: ignore
