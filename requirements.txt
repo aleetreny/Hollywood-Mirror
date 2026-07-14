@@ -1,7 +1,6 @@
-# Full local environment: web runtime + data pipeline + analysis.
-# Hugging Face Spaces should install `requirements-web.txt` instead.
+# Local data pipeline and analysis environment.
+# The production web app is client-only and uses the Node dependencies in frontend/.
 
-fastapi>=0.115
 numpy>=1.24,<2
 pandas>=2.0
 plotly>=5.15
@@ -12,4 +11,3 @@ textblob>=0.18
 torch>=2.0
 tqdm>=4.65
 umap-learn>=0.5
-uvicorn[standard]>=0.32
