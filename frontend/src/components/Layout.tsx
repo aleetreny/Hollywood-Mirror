@@ -15,7 +15,7 @@ export function Layout({children}: {children: ReactNode}) {
               Hollywood Mirror
             </h1>
             <p className="text-xs font-medium text-zinc-400">
-              Semantic movie search over screenplay embeddings
+              Private semantic movie search in your browser
             </p>
           </div>
           <a
