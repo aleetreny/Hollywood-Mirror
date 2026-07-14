@@ -1,37 +1,23 @@
 # Hollywood Mirror Frontend
 
-React + Vite frontend for semantic similarity search against the Hollywood Mirror API.
+React + Vite application for private semantic movie search in the browser.
+
+The app uses a Web Worker and Transformers.js to run the quantized MiniLM model locally. It compares the query embedding with the committed movie embedding matrix and does not call a backend API.
 
 ## Requirements
 
 - Node.js 20 or newer.
 
-## Setup
-
-1. Install dependencies:
-
-```bash
-npm install
-```
-
-2. Create environment variables:
-
-```bash
-cp .env.example .env
-```
-
-3. Update `VITE_API_BASE_URL` in `.env` if your backend is not running at `http://localhost:8000`.
-   If you omit it, local development defaults to `http://localhost:8000` and
-   production defaults to same-origin API requests.
-   For a Vercel frontend talking to Hugging Face Spaces, point it at the public Space URL.
-
 ## Development
 
 ```bash
+npm ci
 npm run dev
 ```
 
-Local server runs at `http://localhost:3000`.
+The local server runs at `http://localhost:3000`.
+
+No `.env` file or API URL is required.
 
 ## Quality and build
 
@@ -42,6 +28,8 @@ Local server runs at `http://localhost:3000`.
 - `npm run clean`: remove `dist/`.
 - `npm run check`: type-check plus production build.
 
-On page load, the app triggers a background backend warmup request and keeps the
-search action disabled until that initial warmup finishes, so the first real search
-is less likely to pay the full cold-start cost.
+## Production
+
+The frontend is deployed directly to Vercel with `frontend/` as the project root and `dist/` as the output directory.
+
+The first visit downloads the model and static search index. Subsequent visits use the browser cache, and all query text remains on the user's device.

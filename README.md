@@ -1,106 +1,66 @@
 # Hollywood Mirror
 
-Hollywood Mirror is now organized as a web-first monorepo:
+Hollywood Mirror is a private semantic movie search app that runs entirely in the browser.
 
-- `frontend/` contains the React + Vite client.
-- `src/api.py` exposes the semantic search API.
-- `data/processed/` stores the committed embedding artifacts required by the web app.
-- `analysis/` contains the Quarto report and is intentionally separate from the web deploy path.
+- `frontend/` contains the React + Vite application.
+- `frontend/src/search/` contains the Web Worker that runs MiniLM locally with Transformers.js.
+- `data/processed/` stores the committed embedding artifacts used by the web app and analysis.
+- `src/` contains the offline data-processing and embedding pipeline.
+- `analysis/` contains the Quarto report and is intentionally separate from the web deployment.
 
+The production app has no API server, container, warm-up service, or Hugging Face Space dependency. User queries stay on the device.
 
-## Quick Start
+## Run the web app locally
 
-### 1. Install the full local environment
+Requirements:
+
+- Node.js 20 or newer.
+
+```bash
+npm --prefix frontend ci
+npm --prefix frontend run dev
+```
+
+The development server runs at `http://localhost:3000`.
+
+Useful checks:
+
+```bash
+npm --prefix frontend run typecheck
+npm --prefix frontend run build
+npm --prefix frontend run check
+```
+
+The first browser visit downloads the quantized MiniLM model and the static movie index. Those assets are cached by the browser for later visits.
+
+## Production deployment
+
+The only production deployment is the Vercel frontend at:
+
+- `https://hollywood-mirror.vercel.app`
+
+Vercel project settings:
+
+- Root directory: `frontend`
+- Framework: Vite
+- Install command: `npm ci`
+- Build command: `npm run build`
+- Output directory: `dist`
+- Environment variables: none required
+
+No rewrite, proxy, serverless function, Python runtime, or external inference service is needed.
+
+## Offline data pipeline
+
+The Python environment is only required to regenerate data and analysis artifacts.
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-npm --prefix frontend ci
 ```
 
-### 2. Run the API
-
-```bash
-python -m uvicorn src.api:app --reload --port 8000
-```
-
-The API starts on `http://localhost:8000`.
-
-### 3. Run the frontend
-
-```bash
-cp frontend/.env.example frontend/.env
-npm --prefix frontend run dev
-```
-
-The frontend starts on `http://localhost:3000`.
-
-## Web Architecture
-
-The web application only depends on:
-
-- `src/`
-- `frontend/`
-- `data/processed/movie_embeddings_*.npy`
-- `data/processed/movie_embeddings_*.txt`
-
-Everything related to Quarto, exploratory analysis, raw screenplay data, and local
-metadata is excluded from the web deployment path.
-
-### API behavior
-
-Main routes:
-
-- `GET /healthz`
-- `GET /api/capabilities`
-- `POST /api/similar-movies`
-- `POST /api/warmup`
-
-Search models currently supported:
-
-- `minilm`
-- `mpnet`
-
-The API normalizes embedding matrices once, caches repeated query vectors in memory,
-and exposes a dedicated warmup route for the default model.
-It also defaults to public CORS (`*`) so a static frontend can call it from Vercel,
-Cloudflare, Netlify, or Hugging Face without extra credentials setup.
-
-Cold-start strategy for first-time visitors:
-
-- the frontend calls `POST /api/warmup` as soon as the page opens
-- the default model (`minilm`) is already baked into the Hugging Face Docker image
-- the backend container preloads `minilm` on startup in Docker deployments
-- the search button stays disabled while the initial warmup is still running
-
-## Python Dependencies
-
-The repository uses:
-
-- `requirements.txt` for the full local environment
-- `requirements-web.txt` for the production API runtime only
-
-## Frontend Build
-
-Useful commands:
-
-```bash
-npm --prefix frontend run build
-npm --prefix frontend run check
-```
-
-The frontend defaults to:
-
-- local API: `http://localhost:8000`
-- production API: same origin, unless `VITE_API_BASE_URL` is explicitly set
-- for Vercel + Hugging Face, set `VITE_API_BASE_URL` to the public Space URL
-
-## Data Pipeline
-
-The data pipeline remains available but is not required to run the web app.
-
-Expected local-only inputs:
+Expected local-only inputs include:
 
 - `data/raw/`
 - `data/metadata/movie_meta_data.csv`
@@ -115,36 +75,11 @@ python -m src.embeddings minilm
 python -m src.precompute
 ```
 
-## Quarto Report
+## Quarto report
 
-The report is intentionally out of the web deployment path.
+The report remains independent from the deployed web app.
 
 ```bash
 cd analysis
 quarto render galaxia.qmd
 ```
-
-## Deployment Notes
-
-### Backend container
-
-The Docker image is trimmed for the API runtime:
-
-- installs only `requirements-web.txt`
-- downloads and bakes the default `minilm` model during image build
-- copies only `src/` and `data/processed/`
-- excludes `frontend/`, `analysis/`, raw data, and generated report artifacts
-
-### Static frontend providers
-
-The repository includes:
-
-- `vercel.json`
-
-It keeps the Vercel build rooted on `frontend/dist` even when the repo root is used,
-and proxies `/api/*` requests to the Hugging Face Space backend.
-
-### Hugging Face Spaces
-
-`upload_hf.py` now ignores analysis artifacts, frontend assets, raw data, and generated
-CSV/Parquet files so uploads stay focused on the API runtime.
