@@ -1,11 +1,9 @@
 /// <reference lib="webworker" />
 
-import {env, pipeline} from '@huggingface/transformers';
-import type {FeatureExtractionPipelineType} from '@huggingface/transformers';
-
 import type {MovieResult} from '@/types';
 import type {WorkerRequest, WorkerResponse} from './protocol';
 
+const TRANSFORMERS_URL = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1';
 const MODEL_ID = 'onnx-community/all-MiniLM-L6-v2-ONNX';
 const DATA_VERSION = 'c8783c29d15fc7de388e5ae6d6a1167ea4ebeb99';
 const DATA_BASE_URL = `https://cdn.jsdelivr.net/gh/aleetreny/Hollywood-Mirror@${DATA_VERSION}/data/processed`;
@@ -13,13 +11,23 @@ const EMBEDDINGS_URL = `${DATA_BASE_URL}/movie_embeddings_minilm.npy`;
 const TITLES_URL = `${DATA_BASE_URL}/movie_embeddings_minilm.txt`;
 const DIMENSION = 384;
 
-type Extractor = FeatureExtractionPipelineType;
+interface TensorOutput {
+  data: Float32Array;
+}
 
-const createFeatureExtractor = pipeline as unknown as (
-  task: 'feature-extraction',
-  model: string,
-  options: {dtype: 'q8'; progress_callback: (value: unknown) => void},
-) => Promise<Extractor>;
+type Extractor = (
+  text: string,
+  options: {pooling: 'mean'; normalize: true},
+) => Promise<TensorOutput>;
+
+interface TransformersModule {
+  env: {allowLocalModels: boolean};
+  pipeline: (
+    task: 'feature-extraction',
+    model: string,
+    options: {dtype: 'q8'; progress_callback: (value: unknown) => void},
+  ) => Promise<Extractor>;
+}
 
 interface MovieIndex {
   matrix: Float32Array;
@@ -33,11 +41,10 @@ interface NpyArray {
   shape: number[];
 }
 
+let transformersPromise: Promise<TransformersModule> | null = null;
 let extractorPromise: Promise<Extractor> | null = null;
 let indexPromise: Promise<MovieIndex> | null = null;
 let initializationPromise: Promise<void> | null = null;
-
-env.allowLocalModels = false;
 
 theGlobal().onmessage = (event: MessageEvent<WorkerRequest>) => {
   const message = event.data;
@@ -95,14 +102,27 @@ function parseProgressLabel(value: unknown): string {
   return 'Downloading local AI model…';
 }
 
+async function loadTransformers(): Promise<TransformersModule> {
+  if (!transformersPromise) {
+    transformersPromise = import(/* @vite-ignore */ TRANSFORMERS_URL).then((module) => {
+      const transformers = module as unknown as TransformersModule;
+      transformers.env.allowLocalModels = false;
+      return transformers;
+    });
+  }
+  return transformersPromise;
+}
+
 async function loadExtractor(): Promise<Extractor> {
   if (!extractorPromise) {
-    extractorPromise = createFeatureExtractor('feature-extraction', MODEL_ID, {
-      dtype: 'q8',
-      progress_callback: (value: unknown) => {
-        report(parseProgressLabel(value), parseProgress(value));
-      },
-    });
+    extractorPromise = loadTransformers().then(({pipeline}) =>
+      pipeline('feature-extraction', MODEL_ID, {
+        dtype: 'q8',
+        progress_callback: (value: unknown) => {
+          report(parseProgressLabel(value), parseProgress(value));
+        },
+      }),
+    );
   }
   return extractorPromise;
 }
@@ -168,7 +188,7 @@ async function search(requestId: number, text: string, requestedK: number): Prom
   report('Encoding your idea locally…', null);
   const [extractor, index] = await Promise.all([loadExtractor(), loadIndex()]);
   const output = await extractor(normalizedText, {pooling: 'mean', normalize: true});
-  const query = output.data as Float32Array;
+  const query = output.data;
   if (query.length !== index.columns) {
     throw new Error(`The model returned ${query.length} dimensions instead of ${index.columns}.`);
   }
