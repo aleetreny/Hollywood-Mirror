@@ -25,6 +25,11 @@ try {
     timeout: 60_000,
   });
 
+  const englishOnlyNotice = page.getByText('English only', {exact: true});
+  if (!(await englishOnlyNotice.isVisible())) {
+    throw new Error('The English-only search notice is not visible.');
+  }
+
   const prompt = page.getByLabel('Your Idea or Script Fragment');
   await prompt.fill(
     'A lonely astronaut searches for signs of life after losing contact with Earth.',
